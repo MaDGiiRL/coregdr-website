@@ -1,0 +1,78 @@
+/* src/main.css */
+:root {
+    --bg-gradient:
+        radial-gradient(60% 60% at 10% 0%, rgba(111, 47, 217, 0.35) 0%, transparent 60%),
+        radial-gradient(50% 50% at 90% 10%, rgba(53, 210, 255, 0.35) 0%, transparent 55%),
+        linear-gradient(180deg, #181a33, #13142b);
+    --violet: #6F2FD9;
+    --violet-light: #B496FF;
+    --violet-soft: #D6C4FF;
+    --pink: #FFF9C9;
+    --pink-soft: #f8f5e1;
+    --blue: #35D2FF;
+    --blue-light: #A6ECFF;
+    --color-bg: #181a33;
+    --color-surface: #1f2140;
+    --color-primary: var(--violet);
+    --color-primary-soft: var(--violet-soft);
+    --color-accent-warm: var(--pink);
+    --color-accent-cool: var(--blue);
+    --color-text: #fdf7ff;
+    --color-text-muted: #c0c3e0;
+    --color-border: rgba(255, 255, 255, 0.16);
+    --color-shadow: rgba(0, 0, 0, 0.25);
+    --yellow: #FFF6A8;
+    --yellow-soft: #FFFBE0;
+
+    --size: min(80vmin, 800px);
+    --ring-radius: calc(var(--size) / 2 - 60px);
+    --icon-size: 64px;
+    --center-size: calc(var(--size) / 1.8);
+    --accent: var(--blue);
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Segoe UI", sans-serif;
+}
+
+@import "tailwindcss";
+
+/* Nasconde la scrollbar orizzontale del carosello */
+.hide-scrollbar {
+    scrollbar-width: none;
+    /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari, Edge */
+}
+
+.logo-float {
+    animation: float 4s ease-in-out infinite;
+    pointer-events: none;
+    user-select: none;
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0px);
+    }
+
+    50% {
+        transform: translateY(-12px);
+    }
+}
