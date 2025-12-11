@@ -25,10 +25,10 @@ export default function HeroSection() {
 
         <div className="flex flex-wrap gap-3">
           <a
-            href="/auth/discord" // <--- metti qui la tua route / link login Discord
+            href="https://discord.gg/AgQbbnzwMc" // <--- metti qui la tua route / link login Discord
             className="px-5 py-2.5 rounded-full text-sm md:text-base font-medium bg-[var(--violet)] text-white shadow-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-transform transition-shadow"
           >
-            Entra con Discord
+            Entra su Discord
           </a>
         </div>
 
