@@ -2,9 +2,17 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
+import Swal from "sweetalert2"; // ✅
 
 const MAX_STORIA = 5000;
 const MAX_CONDANNE = 300;
+
+// campi che consideriamo "importanti"
+const REQUIRED_FIELDS = [
+  { key: "nome", label: "Nome" },
+  { key: "cognome", label: "Cognome" },
+  { key: "sesso", label: "Sesso" },
+];
 
 export default function BackgroundForm() {
   const { profile, session, loading } = useAuth();
@@ -63,25 +71,63 @@ export default function BackgroundForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setSubmitStatus(null);
 
+    // 🔹 Auth in caricamento
+    if (loading) {
+      await Swal.fire({
+        icon: "info",
+        title: "Attendi un attimo",
+        text: "La sessione utente è ancora in caricamento...",
+      });
+      return;
+    }
+
+    // 🔹 Non loggato
+    if (!session || !profile) {
+      setSubmitStatus("error");
+      await Swal.fire({
+        icon: "warning",
+        title: "Non sei loggato",
+        text: "Devi effettuare il login con Discord prima di inviare il background.",
+      });
+      return;
+    }
+
+    // 🔹 controlla i campi "importanti" vuoti
+    const missing = REQUIRED_FIELDS.filter((f) => {
+      const value = form[f.key];
+      return !value || (typeof value === "string" && value.trim() === "");
+    }).map((f) => f.label);
+
+    // se ci sono campi mancanti, chiedi conferma con SweetAlert
+    if (missing.length > 0) {
+      const result = await Swal.fire({
+        icon: "warning",
+        title: "Alcuni campi non sono compilati",
+        html: `
+          <p>Non hai compilato i seguenti campi:</p>
+          <ul style="text-align:left; margin-top: 8px;">
+            ${missing.map((m) => `<li>${m}</li>`).join("")}
+          </ul>
+          <p style="margin-top:12px;">Vuoi inviare il background lo stesso?</p>
+        `,
+        showCancelButton: true,
+        confirmButtonText: "Sì, invia comunque",
+        cancelButtonText: "No, torna al form",
+        focusCancel: true,
+      });
+
+      if (!result.isConfirmed) {
+        // utente annulla → non inviamo
+        return;
+      }
+    }
+
+    // 🔹 Invio
+    setIsSubmitting(true);
+
     try {
-      // se Auth sta ancora caricando
-      if (loading) {
-        alert("Attendi il caricamento della sessione...");
-        setIsSubmitting(false);
-        return;
-      }
-
-      // se non ho sessione/profilo → blocco
-      if (!session || !profile) {
-        alert("Devi eseguire il login con Discord.");
-        setSubmitStatus("error");
-        setIsSubmitting(false);
-        return;
-      }
-
       // pulizia arrays
       const patologieClean = form.patologie
         .filter((p) => p.nome.trim() !== "")
@@ -114,14 +160,35 @@ export default function BackgroundForm() {
       if (error) {
         console.error("Errore durante l'invio:", error);
         setSubmitStatus("error");
+        await Swal.fire({
+          icon: "error",
+          title: "Errore durante l'invio",
+          html: `
+            <p>Si è verificato un errore durante il salvataggio del background.</p>
+            <p style="margin-top:8px; font-size:12px; opacity:0.8;">
+              Messaggio: <code>${error.message}</code><br/>
+              Codice: <code>${error.code || "n/a"}</code>
+            </p>
+          `,
+        });
       } else {
         setSubmitStatus("ok");
+        await Swal.fire({
+          icon: "success",
+          title: "Background inviato!",
+          text: "Il tuo background è stato inviato allo staff per la revisione.",
+        });
         // opzionale: reset del form
-        // setForm({...});
+        // setForm({ ... });
       }
     } catch (err) {
       console.error("Errore BG:", err);
       setSubmitStatus("error");
+      await Swal.fire({
+        icon: "error",
+        title: "Errore imprevisto",
+        text: "Si è verificato un errore imprevisto. Riprova più tardi.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -182,20 +249,17 @@ export default function BackgroundForm() {
             <Input
               label="Nome"
               value={form.nome}
-              required
               onChange={(v) => handleChange("nome", v)}
             />
             <Input
               label="Cognome"
               value={form.cognome}
-              required
               onChange={(v) => handleChange("cognome", v)}
             />
 
             <Select
               label="Sesso"
               value={form.sesso}
-              required
               onChange={(v) => handleChange("sesso", v)}
               options={[
                 { label: "Maschio", value: "M" },
@@ -312,13 +376,12 @@ export default function BackgroundForm() {
    COMPONENTI INTERNI
 ------------------------------------------------------*/
 
-function Input({ label, value, onChange, required, type = "text" }) {
+function Input({ label, value, onChange, type = "text" }) {
   return (
     <div>
       <label className="text-xs font-medium">{label}</label>
       <input
         type={type}
-        required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full mt-1 rounded-xl px-3 py-2 bg-[#111326] border border-[var(--color-border)]"
@@ -327,12 +390,11 @@ function Input({ label, value, onChange, required, type = "text" }) {
   );
 }
 
-function Select({ label, value, onChange, options, required }) {
+function Select({ label, value, onChange, options }) {
   return (
     <div>
       <label className="text-xs font-medium">{label}</label>
       <select
-        required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full mt-1 rounded-xl px-3 py-2 bg-[#111326] border border-[var(--color-border)]"
@@ -351,7 +413,7 @@ function Select({ label, value, onChange, options, required }) {
 function TextArea({ label, value, onChange, max }) {
   return (
     <div>
-      <div className="flex justify_between">
+      <div className="flex justify-between">
         <label className="text-xs font-medium">{label}</label>
         {max && (
           <span className="text-[10px] text-gray-400">
