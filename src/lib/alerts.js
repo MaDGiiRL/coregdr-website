@@ -1,4 +1,3 @@
-// src/lib/alerts.js
 import Swal from "sweetalert2";
 
 // ✅ Tema dark coerente col tuo UI (Tailwind + palette custom)
@@ -11,6 +10,12 @@ const base = Swal.mixin({
     buttonsStyling: true,
     showClass: { popup: "swal2-show" },
     hideClass: { popup: "swal2-hide" },
+
+    // ✅ garantisce che modali/toast stiano sopra la UI (navbar inclusa)
+    // (SweetAlert2 usa già z-index alto, ma alcune navbar hanno z-50/z-100)
+    customClass: {
+        container: "swal2-container-high",
+    },
 });
 
 const withDefaults = (opts) =>
@@ -99,6 +104,10 @@ export const confirmAction = async ({
    TOAST (non blocca la UI)
 ---------------------------------- */
 
+// ✅ Altezza navbar: cambia questo valore se la tua navbar è più alta.
+// Tipico: 64px (h-16) / 72px / 80px
+const NAVBAR_OFFSET_PX = 72;
+
 export const toast = (icon, title) =>
     base.fire({
         toast: true,
@@ -108,6 +117,15 @@ export const toast = (icon, title) =>
         showConfirmButton: false,
         timer: 2200,
         timerProgressBar: true,
+
+        // ✅ sposta il toast sotto la navbar + assicurati che stia sopra a tutto
+        didOpen: (toastEl) => {
+            const container = toastEl?.parentElement; // .swal2-container
+            if (container) {
+                container.style.marginTop = `${NAVBAR_OFFSET_PX}px`;
+                container.style.zIndex = "99999";
+            }
+        },
     });
 
 /* ---------------------------------
