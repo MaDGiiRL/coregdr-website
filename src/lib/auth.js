@@ -18,13 +18,9 @@ export async function signInWithDiscord() {
 }
 
 export async function signOut() {
-    console.log("[Auth] signOut chiamato");
-
-    const { error } = await supabase.auth.signOut(); // ✅ semplice
+    const { error } = await supabase.auth.signOut();
     if (error) {
         console.error("[Auth] Logout error:", error);
         throw error;
     }
-
-    console.log("[Auth] signOut completato");
 }

@@ -15,6 +15,7 @@ import {
   Home as HomeIcon,
   Plug,
   Users,
+  Bell,
 } from "lucide-react";
 
 import logo from "../assets/img/logo.png";
@@ -37,12 +38,22 @@ const navItems = [
 ];
 
 export default function Navbar() {
-  const { session, profile, loading } = useAuth();
+  const {
+    session,
+    profile,
+    loading,
+    notifications,
+    unreadCount,
+    markNotificationRead,
+    markAllNotificationsRead,
+  } = useAuth();
+
   const navigate = useNavigate();
   const reduce = useReducedMotion();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const mobileRef = useRef(null);
   const userRef = useRef(null);
@@ -74,6 +85,7 @@ export default function Navbar() {
       if (e.key === "Escape") {
         setMobileOpen(false);
         setUserOpen(false);
+        setNotifOpen(false);
       }
     };
 
@@ -112,7 +124,9 @@ export default function Navbar() {
     try {
       await signOut();
       setUserOpen(false);
+      setNotifOpen(false);
       setMobileOpen(false);
+
       toast("success", "Logout effettuato");
       navigate("/");
     } catch (e) {
@@ -127,6 +141,7 @@ export default function Navbar() {
   const closeAllAndGo = (to) => {
     setMobileOpen(false);
     setUserOpen(false);
+    setNotifOpen(false);
     navigate(to);
   };
 
@@ -162,6 +177,7 @@ export default function Navbar() {
           onClick={() => {
             setMobileOpen(false);
             setUserOpen(false);
+            setNotifOpen(false);
           }}
           className="flex items-center gap-2"
         >
@@ -206,12 +222,33 @@ export default function Navbar() {
             onClick={() => {
               setMobileOpen(true);
               setUserOpen(false);
+              setNotifOpen(false);
             }}
             className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 hover:bg-[var(--color-surface)] transition"
             aria-label="Apri menu"
           >
             <Menu className="w-5 h-5 text-[var(--color-text)]" />
           </button>
+
+          {/* 🔔 NOTIFICHE (desktop) */}
+          {isLoggedIn && (
+            <button
+              type="button"
+              onClick={() => {
+                setNotifOpen(true);
+                setUserOpen(false);
+              }}
+              className="relative hidden md:inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 hover:bg-[var(--color-surface)] transition"
+              aria-label="Notifiche"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* AUTH (desktop) */}
           <div className="hidden md:block">
@@ -233,6 +270,7 @@ export default function Navbar() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setUserOpen((p) => !p);
+                    setNotifOpen(false);
                   }}
                   className="flex items-center gap-2 px-2 py-1.5 md:px-3 md:py-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/80 hover:bg-[var(--color-surface)] transition text-xs md:text-sm"
                 >
@@ -317,6 +355,99 @@ export default function Navbar() {
         </div>
       </nav>
 
+      {/* 🔔 MODALE NOTIFICHE */}
+      <AnimatePresence>
+        {notifOpen && (
+          <>
+            <motion.div
+              {...overlayAnim}
+              className="fixed inset-0 bg-black/55 z-[9998]"
+              onClick={() => setNotifOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                transition: { duration: 0.16 },
+              }}
+              exit={{
+                opacity: 0,
+                y: 8,
+                scale: 0.98,
+                transition: { duration: 0.12 },
+              }}
+              className="fixed right-4 top-16 md:top-20 w-[92%] max-w-[420px] rounded-2xl border border-[var(--color-border)] bg-[#181a33]/98 shadow-[0_18px_60px_rgba(0,0,0,0.75)] z-[9999] overflow-hidden"
+            >
+              <div className="p-3 border-b border-[var(--color-border)]/60 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                    Notifiche
+                  </p>
+                  <p className="text-sm font-medium">
+                    {unreadCount > 0
+                      ? `${unreadCount} non lette`
+                      : "Tutte lette"}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={markAllNotificationsRead}
+                    className="px-3 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5 text-xs"
+                  >
+                    Segna tutte lette
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotifOpen(false)}
+                    className="px-3 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5 text-xs"
+                  >
+                    Chiudi
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-[420px] overflow-y-auto p-2 space-y-2">
+                {notifications?.length ? (
+                  notifications.map((n) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => markNotificationRead(n.id)}
+                      className={`w-full text-left rounded-xl border px-3 py-3 transition ${
+                        n.read_at
+                          ? "border-[var(--color-border)] bg-black/20"
+                          : "border-[var(--blue)] bg-[rgba(53,210,255,0.10)]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-xs font-semibold">{n.title}</p>
+                        <span className="text-[10px] text-[var(--color-text-muted)]">
+                          {new Date(n.created_at).toLocaleString("it-IT", {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        {n.message}
+                      </p>
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-xs text-[var(--color-text-muted)] p-3">
+                    Nessuna notifica.
+                  </p>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* MOBILE DRAWER */}
       <AnimatePresence>
         {mobileOpen && (
@@ -394,13 +525,33 @@ export default function Navbar() {
                   </button>
                 ) : (
                   <>
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-white/5 p-3">
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                        Account
-                      </p>
-                      <p className="text-sm font-medium truncate">
-                        {displayName}
-                      </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileOpen(false);
+                          setNotifOpen(true);
+                          setUserOpen(false);
+                        }}
+                        className="relative inline-flex items-center justify-center h-11 w-11 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/60 hover:bg-[var(--color-surface)] transition"
+                        aria-label="Notifiche"
+                      >
+                        <Bell className="w-5 h-5" />
+                        {unreadCount > 0 && (
+                          <span className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">
+                            {unreadCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <div className="flex-1 rounded-2xl border border-[var(--color-border)] bg-white/5 p-3">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                          Account
+                        </p>
+                        <p className="text-sm font-medium truncate">
+                          {displayName}
+                        </p>
+                      </div>
                     </div>
 
                     <button

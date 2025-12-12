@@ -141,9 +141,10 @@ export default function AdminDashboard() {
           rejectedBackgrounds: rejectedBgRes.count ?? 0,
         });
 
+        // ✅ include is_admin
         const { data: usersData, error: usersError } = await supabase
           .from("profiles")
-          .select("id, discord_username, created_at, is_moderator")
+          .select("id, discord_username, created_at, is_moderator, is_admin")
           .order("created_at", { ascending: false });
 
         if (usersError) {
@@ -159,10 +160,12 @@ export default function AdminDashboard() {
 
           const latestBgByUser = new Map();
           (charsData || []).forEach((ch) => {
-            if (!latestBgByUser.has(ch.user_id))
+            if (!latestBgByUser.has(ch.user_id)) {
               latestBgByUser.set(ch.user_id, ch.status);
+            }
           });
 
+          // ✅ aggiungi isAdmin nello state users
           setUsers(
             (usersData || []).map((u) => ({
               id: u.id,
@@ -170,6 +173,7 @@ export default function AdminDashboard() {
               joinedAt: u.created_at,
               bgStatus: latestBgByUser.get(u.id) ?? "none",
               isModerator: !!u.is_moderator,
+              isAdmin: !!u.is_admin,
             }))
           );
         }
@@ -219,7 +223,11 @@ export default function AdminDashboard() {
   const paginatedUsers = paginate(users, usersPage, PAGE_SIZE_FULL);
   const paginatedLogs = paginate(logs, logsPage, PAGE_SIZE_FULL);
 
-  const toggleModerator = async (userId, currentValue) => {
+  // ✅ 3 ruoli su 2 flag
+  const roleLabel = (u) =>
+    u.isAdmin ? "Admin" : u.isModerator ? "Mod" : "User";
+
+  const setUserRole = async (userId, nextRole) => {
     if (!isAdmin) return;
 
     if (userId === profile.id) {
@@ -230,14 +238,15 @@ export default function AdminDashboard() {
       return;
     }
 
-    const newValue = !currentValue;
+    const current = users.find((u) => u.id === userId);
+    const currentRole = current ? roleLabel(current) : "User";
+
+    if (currentRole === nextRole) return;
 
     const ok = await confirmAction({
-      title: newValue ? "Promuovere a moderatore?" : "Rimuovere moderatore?",
-      text: newValue
-        ? "L'utente avrà accesso alla moderazione dei background."
-        : "L'utente perderà i permessi da moderatore.",
-      confirmText: newValue ? "Sì, promuovi" : "Sì, rimuovi",
+      title: `Impostare ruolo: ${nextRole}?`,
+      text: `Stai cambiando il ruolo da ${currentRole} a ${nextRole}.`,
+      confirmText: "Sì, conferma",
       cancelText: "Annulla",
     });
 
@@ -245,10 +254,17 @@ export default function AdminDashboard() {
 
     setUpdatingRoleIds((prev) => [...prev, userId]);
 
+    const patch =
+      nextRole === "Admin"
+        ? { is_admin: true, is_moderator: true }
+        : nextRole === "Mod"
+        ? { is_admin: false, is_moderator: true }
+        : { is_admin: false, is_moderator: false };
+
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ is_moderator: newValue })
+        .update(patch)
         .eq("id", userId);
 
       if (error) {
@@ -258,27 +274,35 @@ export default function AdminDashboard() {
       }
 
       setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, isModerator: newValue } : u))
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                isAdmin: !!patch.is_admin,
+                isModerator: !!patch.is_moderator,
+              }
+            : u
+        )
       );
 
       await supabase.from("logs").insert({
-        type: newValue ? "ROLE_PROMOTE_MOD" : "ROLE_DEMOTE_MOD",
-        message: `${profile.discord_username} ha ${
-          newValue ? "promosso" : "rimosso"
-        } un moderatore.`,
+        type:
+          nextRole === "Admin"
+            ? "ROLE_SET_ADMIN"
+            : nextRole === "Mod"
+            ? "ROLE_SET_MOD"
+            : "ROLE_SET_USER",
+        message: `${profile.discord_username} ha impostato il ruolo di un utente a ${nextRole}.`,
         meta: JSON.stringify({
           admin_id: profile.id,
           target_user_id: userId,
-          is_moderator: newValue,
+          role: nextRole,
         }),
       });
 
-      toast(
-        "success",
-        newValue ? "Utente promosso a mod" : "Ruolo moderatore rimosso"
-      );
+      toast("success", `Ruolo aggiornato: ${nextRole}`);
     } catch (err) {
-      console.error("Error updating moderator role", err);
+      console.error("Error updating role", err);
       await alertError("Errore", "Errore imprevisto durante l'operazione.");
     } finally {
       setUpdatingRoleIds((prev) => prev.filter((id) => id !== userId));
@@ -584,7 +608,7 @@ export default function AdminDashboard() {
                   {buildRangeLabel(users.length, usersPage, PAGE_SIZE_FULL)}
                 </span>
                 <span className="text-[11px] text-[var(--color-text-muted)]">
-                  Clicca per promuovere/rimuovere moderatori.
+                  Imposta ruolo: User / Mod / Admin.
                 </span>
               </div>
 
@@ -592,6 +616,12 @@ export default function AdminDashboard() {
                 {paginatedUsers.map((user) => {
                   const isUpdating = updatingRoleIds.includes(user.id);
                   const isSelf = user.id === profile.id;
+                  const currentRole = user.isAdmin
+                    ? "Admin"
+                    : user.isModerator
+                    ? "Mod"
+                    : "User";
+
                   return (
                     <motion.div
                       key={user.id}
@@ -616,6 +646,7 @@ export default function AdminDashboard() {
                             : "BG rifiutato"}
                         </span>
                       </div>
+
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[10px] text-[var(--color-text-muted)]">
                           Iscritto il{" "}
@@ -624,24 +655,39 @@ export default function AdminDashboard() {
                             timeStyle: "short",
                           })}
                         </p>
-                        <button
-                          type="button"
-                          disabled={isUpdating || isSelf}
-                          onClick={() =>
-                            toggleModerator(user.id, user.isModerator)
-                          }
-                          className={`text-[10px] px-2 py-1 rounded-full border ${
-                            user.isModerator
-                              ? "border-amber-400 text-amber-300"
-                              : "border-[var(--color-border)] text-[var(--color-text-muted)]"
-                          } disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/5`}
-                        >
-                          {isSelf
-                            ? "Tu (admin)"
-                            : user.isModerator
-                            ? "Rimuovi mod"
-                            : "Promuovi a mod"}
-                        </button>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-2 py-1 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)]">
+                            {currentRole}
+                          </span>
+
+                          <button
+                            type="button"
+                            disabled={isUpdating || isSelf}
+                            onClick={() => setUserRole(user.id, "User")}
+                            className="text-[10px] px-2 py-1 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] disabled:opacity-40 hover:bg-white/5"
+                          >
+                            User
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isUpdating || isSelf}
+                            onClick={() => setUserRole(user.id, "Mod")}
+                            className="text-[10px] px-2 py-1 rounded-full border border-amber-400 text-amber-300 disabled:opacity-40 hover:bg-white/5"
+                          >
+                            Mod
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isUpdating || isSelf}
+                            onClick={() => setUserRole(user.id, "Admin")}
+                            className="text-[10px] px-2 py-1 rounded-full border border-[var(--violet-soft)] text-[var(--color-accent-cool)] disabled:opacity-40 hover:bg-white/5"
+                          >
+                            Admin
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
                   );
