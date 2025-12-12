@@ -9,9 +9,10 @@ import {
   RefreshCw,
   Crown,
   BadgeCheck,
-  UserCog,
+  UserCog, 
   Server,
 } from "lucide-react";
+
 
 import BackgroundQueue from "./BackgroundQueue";
 import { useAuth } from "../../context/AuthContext";

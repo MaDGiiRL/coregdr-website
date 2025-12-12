@@ -1,5 +1,5 @@
 // src/components/Navbar.jsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -36,6 +36,26 @@ const navItems = [
   { to: "/regolamento", label: "Regolamento", icon: ScrollText },
   { to: "/staff", label: "Staff", icon: Users },
 ];
+
+function buildDiscordAvatarUrl(meta) {
+  if (!meta) return null;
+
+  if (typeof meta.avatar_url === "string" && meta.avatar_url.length > 0) {
+    return meta.avatar_url;
+  }
+
+  const discordId = meta.provider_id || meta.sub || meta.id;
+  const avatarHash = meta.avatar;
+
+  if (discordId && avatarHash) {
+    const isAnimated =
+      typeof avatarHash === "string" && avatarHash.startsWith("a_");
+    const ext = isAnimated ? "gif" : "png";
+    return `https://cdn.discordapp.com/avatars/${discordId}/${avatarHash}.${ext}?size=128`;
+  }
+
+  return null;
+}
 
 export default function Navbar() {
   const {
@@ -79,6 +99,13 @@ export default function Navbar() {
     displayName && typeof displayName === "string"
       ? displayName.charAt(0).toUpperCase()
       : "?";
+
+  const discordAvatarUrl = useMemo(() => buildDiscordAvatarUrl(meta), [meta]);
+
+  const [avatarError, setAvatarError] = useState(false);
+  useEffect(() => {
+    setAvatarError(false);
+  }, [discordAvatarUrl]);
 
   useEffect(() => {
     const onDown = (e) => {
@@ -274,9 +301,22 @@ export default function Navbar() {
                   }}
                   className="flex items-center gap-2 px-2 py-1.5 md:px-3 md:py-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/80 hover:bg-[var(--color-surface)] transition text-xs md:text-sm"
                 >
-                  <div className="h-8 w-8 rounded-full bg-[var(--violet)] flex items-center justify-center text-xs font-bold text-white shadow-md">
-                    {avatarInitial}
+                  <div className="h-8 w-8 rounded-full overflow-hidden bg-[var(--violet)] shadow-md border border-white/10 grid place-items-center">
+                    {discordAvatarUrl && !avatarError ? (
+                      <img
+                        src={discordAvatarUrl}
+                        alt="Avatar Discord"
+                        className="h-full w-full object-cover"
+                        referrerPolicy="no-referrer"
+                        onError={() => setAvatarError(true)}
+                      />
+                    ) : (
+                      <span className="text-xs font-bold text-white">
+                        {avatarInitial}
+                      </span>
+                    )}
                   </div>
+
                   <div className="hidden lg:flex flex-col items-start leading-tight max-w-[160px]">
                     <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
                       Ciao,
@@ -361,7 +401,7 @@ export default function Navbar() {
           <>
             <motion.div
               {...overlayAnim}
-              className="fixed inset-0 bg-black/55 z-[9998]"
+              className="fixed inset-0 bg-black/70 z-[9998]" // ✅ più scuro
               onClick={() => setNotifOpen(false)}
             />
             <motion.div
@@ -452,14 +492,25 @@ export default function Navbar() {
       <AnimatePresence>
         {mobileOpen && (
           <>
+            {/* ✅ overlay più scuro + click chiude */}
             <motion.div
               {...overlayAnim}
-              className="fixed inset-0 bg-black/55 z-[9998]"
+              className="fixed inset-0 bg-black/70 z-[9998]"
+              onClick={() => setMobileOpen(false)}
             />
+
             <motion.aside
               {...drawerAnim}
               ref={mobileRef}
-              className="fixed top-0 right-0 h-full w-[86%] max-w-[360px] bg-[#14152b]/98 border-l border-[var(--color-border)] z-[9999] shadow-[0_18px_60px_rgba(0,0,0,0.75)]"
+              className={[
+                // ✅ sfondo "vero", non trasparente
+                "fixed top-0 right-0 h-full w-[86%] max-w-[360px] z-[9999]",
+                "border-l border-[var(--color-border)]",
+                "bg-[#0b0d1b] text-[var(--color-text)]",
+                "shadow-[0_22px_80px_rgba(0,0,0,0.85)]",
+                // ✅ blur solo se supportato
+                "supports-[backdrop-filter]:backdrop-blur-xl supports-[backdrop-filter]:bg-[#0b0d1b]/92",
+              ].join(" ")}
             >
               <div className="p-4 flex items-center justify-between border-b border-[var(--color-border)]/60">
                 <div className="flex items-center gap-2">
@@ -475,7 +526,7 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => setMobileOpen(false)}
-                  className="h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/60 hover:bg-[var(--color-surface)] transition inline-flex items-center justify-center"
+                  className="h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-white/5 hover:bg-white/10 transition inline-flex items-center justify-center"
                   aria-label="Chiudi menu"
                 >
                   <X className="w-5 h-5" />
@@ -495,7 +546,7 @@ export default function Navbar() {
                       className={({ isActive }) =>
                         `w-full px-3 py-3 rounded-2xl border transition flex items-center gap-2 ${
                           isActive
-                            ? "bg-[var(--color-surface)] border-[var(--color-accent-cool)] text-[var(--color-accent-cool)]"
+                            ? "bg-white/10 border-[var(--color-accent-cool)] text-[var(--color-accent-cool)]"
                             : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
                         }`
                       }
@@ -533,7 +584,7 @@ export default function Navbar() {
                           setNotifOpen(true);
                           setUserOpen(false);
                         }}
-                        className="relative inline-flex items-center justify-center h-11 w-11 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/60 hover:bg-[var(--color-surface)] transition"
+                        className="relative inline-flex items-center justify-center h-11 w-11 rounded-2xl border border-[var(--color-border)] bg-white/5 hover:bg-white/10 transition"
                         aria-label="Notifiche"
                       >
                         <Bell className="w-5 h-5" />
@@ -544,13 +595,30 @@ export default function Navbar() {
                         )}
                       </button>
 
-                      <div className="flex-1 rounded-2xl border border-[var(--color-border)] bg-white/5 p-3">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                          Account
-                        </p>
-                        <p className="text-sm font-medium truncate">
-                          {displayName}
-                        </p>
+                      <div className="flex-1 rounded-2xl border border-[var(--color-border)] bg-white/5 p-3 flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full overflow-hidden bg-[var(--violet)] shadow-md border border-white/10 grid place-items-center">
+                          {discordAvatarUrl && !avatarError ? (
+                            <img
+                              src={discordAvatarUrl}
+                              alt="Avatar Discord"
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={() => setAvatarError(true)}
+                            />
+                          ) : (
+                            <span className="text-sm font-bold text-white">
+                              {avatarInitial}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                            Account
+                          </p>
+                          <p className="text-sm font-medium truncate">
+                            {displayName}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
