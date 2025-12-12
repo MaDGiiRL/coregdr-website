@@ -766,7 +766,7 @@ export default function CharacterDashboard() {
                     </>
                   )}
                 </div>
-              </div>
+              </div> 
             ) : (
               <p className="text-sm text-[var(--color-text-muted)]">
                 Nessun personaggio selezionato.
