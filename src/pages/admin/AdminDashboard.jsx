@@ -7,6 +7,9 @@ import {
   Users as UsersIcon,
   Activity,
   Shield,
+  Crown,
+  UserCog,
+  User as UserIcon,
 } from "lucide-react";
 
 import BackgroundQueue from "./BackgroundQueue";
@@ -14,7 +17,6 @@ import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import {
   alertError,
-  alertInfo,
   alertWarning,
   confirmAction,
   toast,
@@ -33,6 +35,28 @@ const statusPill = (status) => {
       return "bg-red-400/15 text-red-300 border-red-400/40";
     default:
       return "bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]";
+  }
+};
+
+const rolePill = (role) => {
+  switch (role) {
+    case "Admin":
+      return "bg-[rgba(154,115,255,0.14)] text-[var(--color-accent-cool)] border-[var(--violet-soft)]";
+    case "Mod":
+      return "bg-amber-400/15 text-amber-300 border-amber-400/40";
+    default:
+      return "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]";
+  }
+};
+
+const roleIcon = (role) => {
+  switch (role) {
+    case "Admin":
+      return Crown;
+    case "Mod":
+      return UserCog;
+    default:
+      return UserIcon;
   }
 };
 
@@ -141,7 +165,6 @@ export default function AdminDashboard() {
           rejectedBackgrounds: rejectedBgRes.count ?? 0,
         });
 
-        // ✅ include is_admin
         const { data: usersData, error: usersError } = await supabase
           .from("profiles")
           .select("id, discord_username, created_at, is_moderator, is_admin")
@@ -160,12 +183,10 @@ export default function AdminDashboard() {
 
           const latestBgByUser = new Map();
           (charsData || []).forEach((ch) => {
-            if (!latestBgByUser.has(ch.user_id)) {
+            if (!latestBgByUser.has(ch.user_id))
               latestBgByUser.set(ch.user_id, ch.status);
-            }
           });
 
-          // ✅ aggiungi isAdmin nello state users
           setUsers(
             (usersData || []).map((u) => ({
               id: u.id,
@@ -223,7 +244,6 @@ export default function AdminDashboard() {
   const paginatedUsers = paginate(users, usersPage, PAGE_SIZE_FULL);
   const paginatedLogs = paginate(logs, logsPage, PAGE_SIZE_FULL);
 
-  // ✅ 3 ruoli su 2 flag
   const roleLabel = (u) =>
     u.isAdmin ? "Admin" : u.isModerator ? "Mod" : "User";
 
@@ -240,7 +260,6 @@ export default function AdminDashboard() {
 
     const current = users.find((u) => u.id === userId);
     const currentRole = current ? roleLabel(current) : "User";
-
     if (currentRole === nextRole) return;
 
     const ok = await confirmAction({
@@ -249,7 +268,6 @@ export default function AdminDashboard() {
       confirmText: "Sì, conferma",
       cancelText: "Annulla",
     });
-
     if (!ok) return;
 
     setUpdatingRoleIds((prev) => [...prev, userId]);
@@ -311,9 +329,12 @@ export default function AdminDashboard() {
 
   const pageAnim = {
     initial: { opacity: 0, y: reduce ? 0 : 10 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.25 } },
-    exit: { opacity: 0, y: reduce ? 0 : -8, transition: { duration: 0.18 } },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.22 } },
+    exit: { opacity: 0, y: reduce ? 0 : -8, transition: { duration: 0.16 } },
   };
+
+  const shellCard =
+    "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
 
   if (authLoading) {
     return (
@@ -339,43 +360,58 @@ export default function AdminDashboard() {
 
   return (
     <section className="space-y-6">
-      <header className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5 text-[var(--color-text-muted)]" />
-          <h1 className="text-2xl md:text-3xl font-semibold">
-            {isAdmin ? "Admin dashboard" : "Area moderazione"}
-          </h1>
+      {/* Header più “pro” */}
+      <header className={`${shellCard} p-5 md:p-6 space-y-3`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-[var(--color-text-muted)]" />
+              <h1 className="text-2xl md:text-3xl font-semibold">
+                {isAdmin ? "Admin dashboard" : "Area moderazione"}
+              </h1>
+            </div>
+            <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-3xl">
+              {isAdmin
+                ? "Panoramica su background, iscritti e attività del server. Accesso riservato allo staff admin."
+                : "Area staff dedicata alla moderazione dei background. Puoi solo approvare o rifiutare i BG."}
+            </p>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2">
+            <span
+              className={`px-3 py-1.5 rounded-full border text-xs ${rolePill(
+                isAdmin ? "Admin" : isMod ? "Mod" : "User"
+              )}`}
+            >
+              {isAdmin ? "Admin" : isMod ? "Mod" : "Staff"}
+            </span>
+          </div>
         </div>
 
-        <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-3xl">
-          {isAdmin
-            ? "Panoramica su background, iscritti e attività del server. Accesso riservato allo staff admin."
-            : "Area staff dedicata alla moderazione dei background. Puoi solo approvare o rifiutare i BG."}
-        </p>
+        {/* Tabs più pulite */}
+        <nav className="flex flex-wrap gap-2 pt-1">
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const Icon = tab.icon;
+            return (
+              <motion.button
+                key={tab.id}
+                type="button"
+                whileTap={{ scale: reduce ? 1 : 0.98 }}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3.5 py-2 rounded-full border transition inline-flex items-center gap-2 text-xs md:text-sm ${
+                  isActive
+                    ? "bg-[var(--violet)] text-white border-[var(--violet-soft)] shadow-md"
+                    : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </motion.button>
+            );
+          })}
+        </nav>
       </header>
-
-      <nav className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/80 backdrop-blur px-3 py-2 flex flex-wrap gap-2 text-xs md:text-sm">
-        {visibleTabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          const Icon = tab.icon;
-          return (
-            <motion.button
-              key={tab.id}
-              type="button"
-              whileTap={{ scale: reduce ? 1 : 0.97 }}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-xl border transition flex items-center gap-2 ${
-                isActive
-                  ? "bg-[var(--violet)] text-white border-[var(--violet-soft)] shadow-md"
-                  : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-            </motion.button>
-          );
-        })}
-      </nav>
 
       {loadingData && isAdmin && (
         <p className="text-xs text-[var(--color-text-muted)]">
@@ -386,30 +422,44 @@ export default function AdminDashboard() {
       <AnimatePresence mode="wait">
         {!loadingData && isAdmin && activeTab === "overview" && (
           <motion.section key="overview" {...pageAnim} className="space-y-6">
+            {/* Stats cards più consistenti */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: "Utenti registrati", value: stats.totalUsers },
-                { label: "Background inviati", value: stats.totalBackgrounds },
+                {
+                  label: "Utenti registrati",
+                  value: stats.totalUsers,
+                  hint: "Totale profili",
+                },
+                {
+                  label: "Background inviati",
+                  value: stats.totalBackgrounds,
+                  hint: "Tutti gli invii",
+                },
                 {
                   label: "BG in attesa",
                   value: stats.pendingBackgrounds,
+                  hint: "Da revisionare",
                   extra: "text-yellow-300",
                 },
                 {
                   label: "BG approvati / rifiutati",
                   value: `${stats.approvedBackgrounds} / ${stats.rejectedBackgrounds}`,
+                  hint: "Esiti",
                 },
               ].map((c, idx) => (
                 <motion.div
                   key={idx}
                   whileHover={{ y: reduce ? 0 : -2 }}
-                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 flex flex-col gap-2"
+                  className={`${shellCard} p-4 md:p-5`}
                 >
-                  <p className="text-xs text-[var(--color-text-muted)]">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
                     {c.label}
                   </p>
-                  <p className={`text-2xl font-semibold ${c.extra ?? ""}`}>
+                  <p className={`mt-2 text-2xl font-semibold ${c.extra ?? ""}`}>
                     {c.value}
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    {c.hint}
                   </p>
                 </motion.div>
               ))}
@@ -418,7 +468,7 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Ultimi iscritti */}
               <div className="lg:col-span-5 xl:col-span-4">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+                <div className={`${shellCard} p-4 space-y-3`}>
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm md:text-base font-semibold">
                       Ultimi iscritti
@@ -432,40 +482,64 @@ export default function AdminDashboard() {
                     </span>
                   </div>
 
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto">
-                    {overviewUsers.map((user) => (
-                      <motion.div
-                        key={user.id}
-                        whileHover={{ y: reduce ? 0 : -1 }}
-                        className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm flex flex-col gap-1"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium truncate">
-                            {user.discordName}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
-                              user.bgStatus === "none" ? "none" : user.bgStatus
-                            )}`}
-                          >
-                            {user.bgStatus === "none"
-                              ? "Nessun BG"
-                              : user.bgStatus === "pending"
-                              ? "BG in attesa"
-                              : user.bgStatus === "approved"
-                              ? "BG approvato"
-                              : "BG rifiutato"}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-[var(--color-text-muted)]">
-                          Iscritto il{" "}
-                          {new Date(user.joinedAt).toLocaleString("it-IT", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </p>
-                      </motion.div>
-                    ))}
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto">
+                    {overviewUsers.map((user) => {
+                      const role = roleLabel(user);
+                      const RoleIcon = roleIcon(role);
+                      return (
+                        <motion.div
+                          key={user.id}
+                          whileHover={{ y: reduce ? 0 : -1 }}
+                          className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">
+                                {user.discordName}
+                              </p>
+                              <p className="text-[10px] text-[var(--color-text-muted)]">
+                                Iscritto il{" "}
+                                {new Date(user.joinedAt).toLocaleString(
+                                  "it-IT",
+                                  {
+                                    dateStyle: "short",
+                                    timeStyle: "short",
+                                  }
+                                )}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span
+                                className={`px-2 py-0.5 rounded-full border text-[10px] inline-flex items-center gap-1 ${rolePill(
+                                  role
+                                )}`}
+                              >
+                                <RoleIcon className="w-3.5 h-3.5" />
+                                {role}
+                              </span>
+
+                              <span
+                                className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
+                                  user.bgStatus === "none"
+                                    ? "none"
+                                    : user.bgStatus
+                                )}`}
+                              >
+                                {user.bgStatus === "none"
+                                  ? "Nessun BG"
+                                  : user.bgStatus === "pending"
+                                  ? "BG in attesa"
+                                  : user.bgStatus === "approved"
+                                  ? "BG approvato"
+                                  : "BG rifiutato"}
+                              </span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+
                     {overviewUsers.length === 0 && (
                       <p className="text-xs text-[var(--color-text-muted)]">
                         Nessun utente registrato.
@@ -480,7 +554,7 @@ export default function AdminDashboard() {
                         setOverviewUsersPage((p) => Math.max(1, p - 1))
                       }
                       disabled={overviewUsersPage === 1}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Prev
                     </button>
@@ -495,7 +569,7 @@ export default function AdminDashboard() {
                         )
                       }
                       disabled={overviewUsersPage === overviewUsersTotalPages}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Next
                     </button>
@@ -505,7 +579,7 @@ export default function AdminDashboard() {
 
               {/* Log attività */}
               <div className="lg:col-span-7 xl:col-span-8">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+                <div className={`${shellCard} p-4 space-y-3`}>
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm md:text-base font-semibold">
                       Log attività
@@ -519,7 +593,7 @@ export default function AdminDashboard() {
                     </span>
                   </div>
 
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto text-xs md:text-sm">
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto text-xs md:text-sm">
                     {overviewLogs.map((log) => (
                       <motion.div
                         key={log.id}
@@ -542,6 +616,7 @@ export default function AdminDashboard() {
                         </p>
                       </motion.div>
                     ))}
+
                     {overviewLogs.length === 0 && (
                       <p className="text-xs text-[var(--color-text-muted)]">
                         Nessun log disponibile.
@@ -556,7 +631,7 @@ export default function AdminDashboard() {
                         setOverviewLogsPage((p) => Math.max(1, p - 1))
                       }
                       disabled={overviewLogsPage === 1}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Prev
                     </button>
@@ -571,7 +646,7 @@ export default function AdminDashboard() {
                         )
                       }
                       disabled={overviewLogsPage === overviewLogsTotalPages}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Next
                     </button>
@@ -584,114 +659,151 @@ export default function AdminDashboard() {
 
         {activeTab === "backgrounds" && (
           <motion.section key="backgrounds" {...pageAnim} className="space-y-4">
-            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Coda background
-            </h2>
-            <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-              Gestisci i background inviati dai giocatori.
-            </p>
+            <div className={`${shellCard} p-4 md:p-5`}>
+              <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Coda background
+              </h2>
+              <p className="mt-1 text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
+                Gestisci i background inviati dai giocatori.
+              </p>
+            </div>
+
             <BackgroundQueue />
           </motion.section>
         )}
 
         {isAdmin && activeTab === "users" && (
           <motion.section key="users" {...pageAnim} className="space-y-4">
-            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-              <UsersIcon className="w-5 h-5" />
-              Utenti registrati
-            </h2>
-
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-[var(--color-text-muted)]">
+            <div className={`${shellCard} p-4 md:p-5`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                    <UsersIcon className="w-5 h-5" />
+                    Utenti registrati
+                  </h2>
+                  <p className="mt-1 text-xs md:text-sm text-[var(--color-text-muted)]">
+                    Cambia ruolo tramite selettore. Ogni utente mostra il badge
+                    del ruolo attuale.
+                  </p>
+                </div>
+                <span className="text-[11px] text-[var(--color-text-muted)]">
                   {buildRangeLabel(users.length, usersPage, PAGE_SIZE_FULL)}
                 </span>
-                <span className="text-[11px] text-[var(--color-text-muted)]">
-                  Imposta ruolo: User / Mod / Admin.
-                </span>
               </div>
+            </div>
 
-              <div className="space-y-2 max-h-[420px] overflow-y-auto">
+            <div className={`${shellCard} p-4 space-y-3`}>
+              <div className="space-y-2 max-h-[520px] overflow-y-auto">
                 {paginatedUsers.map((user) => {
                   const isUpdating = updatingRoleIds.includes(user.id);
                   const isSelf = user.id === profile.id;
+
                   const currentRole = user.isAdmin
                     ? "Admin"
                     : user.isModerator
                     ? "Mod"
                     : "User";
+                  const RoleIcon = roleIcon(currentRole);
 
                   return (
                     <motion.div
                       key={user.id}
                       whileHover={{ y: reduce ? 0 : -1 }}
-                      className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm flex flex-col gap-1"
+                      className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium truncate">
-                          {user.discordName}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
-                            user.bgStatus === "none" ? "none" : user.bgStatus
-                          )}`}
-                        >
-                          {user.bgStatus === "none"
-                            ? "Nessun BG"
-                            : user.bgStatus === "pending"
-                            ? "BG in attesa"
-                            : user.bgStatus === "approved"
-                            ? "BG approvato"
-                            : "BG rifiutato"}
-                        </span>
-                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold truncate">
+                              {user.discordName}
+                            </p>
 
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] text-[var(--color-text-muted)]">
-                          Iscritto il{" "}
-                          {new Date(user.joinedAt).toLocaleString("it-IT", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </p>
+                            {/* ✅ Badge ruolo */}
+                            <span
+                              className={`px-2 py-0.5 rounded-full border text-[10px] inline-flex items-center gap-1 ${rolePill(
+                                currentRole
+                              )}`}
+                              title="Ruolo attuale"
+                            >
+                              <RoleIcon className="w-3.5 h-3.5" />
+                              {currentRole}
+                            </span>
 
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] px-2 py-1 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)]">
-                            {currentRole}
-                          </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
+                                user.bgStatus === "none"
+                                  ? "none"
+                                  : user.bgStatus
+                              )}`}
+                              title="Stato background"
+                            >
+                              {user.bgStatus === "none"
+                                ? "Nessun BG"
+                                : user.bgStatus === "pending"
+                                ? "BG in attesa"
+                                : user.bgStatus === "approved"
+                                ? "BG approvato"
+                                : "BG rifiutato"}
+                            </span>
+                          </div>
 
-                          <button
-                            type="button"
-                            disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(user.id, "User")}
-                            className="text-[10px] px-2 py-1 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] disabled:opacity-40 hover:bg-white/5"
-                          >
-                            User
-                          </button>
+                          <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                            Iscritto il{" "}
+                            {new Date(user.joinedAt).toLocaleString("it-IT", {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })}
+                          </p>
+                        </div>
 
-                          <button
-                            type="button"
-                            disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(user.id, "Mod")}
-                            className="text-[10px] px-2 py-1 rounded-full border border-amber-400 text-amber-300 disabled:opacity-40 hover:bg-white/5"
-                          >
-                            Mod
-                          </button>
+                        {/* ✅ Select ruolo */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex flex-col items-end">
+                            <label className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)] mb-1">
+                              Ruolo
+                            </label>
 
-                          <button
-                            type="button"
-                            disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(user.id, "Admin")}
-                            className="text-[10px] px-2 py-1 rounded-full border border-[var(--violet-soft)] text-[var(--color-accent-cool)] disabled:opacity-40 hover:bg-white/5"
-                          >
-                            Admin
-                          </button>
+                            <div className="relative">
+                              <select
+                                value={currentRole}
+                                disabled={isUpdating || isSelf}
+                                onChange={(e) =>
+                                  setUserRole(user.id, e.target.value)
+                                }
+                                className={`h-9 px-3 pr-8 rounded-xl border bg-[#0b0c1a]/60 text-xs md:text-sm outline-none transition
+                                  border-[var(--color-border)] hover:bg-[#0b0c1a]/75
+                                  disabled:opacity-40 disabled:cursor-not-allowed`}
+                              >
+                                <option value="User">User</option>
+                                <option value="Mod">Mod</option>
+                                <option value="Admin">Admin</option>
+                              </select>
+
+                              {isUpdating && (
+                                <span className="ml-2 text-[11px] text-[var(--color-text-muted)]">
+                                  Aggiorno…
+                                </span>
+                              )}
+                            </div>
+
+                            {isSelf && (
+                              <span className="mt-1 text-[10px] text-[var(--color-text-muted)]">
+                                Non modificabile (tu)
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </motion.div>
                   );
                 })}
+
+                {paginatedUsers.length === 0 && (
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Nessun utente.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
@@ -699,7 +811,7 @@ export default function AdminDashboard() {
                   type="button"
                   onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
                   disabled={usersPage === 1}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Prev
                 </button>
@@ -712,7 +824,7 @@ export default function AdminDashboard() {
                     setUsersPage((p) => Math.min(usersTotalPages, p + 1))
                   }
                   disabled={usersPage === usersTotalPages}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Next
                 </button>
@@ -723,27 +835,29 @@ export default function AdminDashboard() {
 
         {isAdmin && activeTab === "logs" && (
           <motion.section key="logs" {...pageAnim} className="space-y-4">
-            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-              <Activity className="w-5 h-5" />
-              Log attività
-            </h2>
+            <div className={`${shellCard} p-4 md:p-5`}>
+              <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                <Activity className="w-5 h-5" />
+                Log attività
+              </h2>
+              <p className="mt-1 text-xs md:text-sm text-[var(--color-text-muted)]">
+                Dati da tabella <code>logs</code>
+              </p>
+            </div>
 
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+            <div className={`${shellCard} p-4 space-y-3`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-[var(--color-text-muted)]">
                   {buildRangeLabel(logs.length, logsPage, PAGE_SIZE_FULL)}
                 </span>
-                <span className="text-[11px] text-[var(--color-text-muted)]">
-                  Dati da tabella <code>logs</code>
-                </span>
               </div>
 
-              <div className="space-y-2 max-h-[420px] overflow-y-auto text-xs md:text-sm">
+              <div className="space-y-2 max-h-[520px] overflow-y-auto text-xs md:text-sm">
                 {paginatedLogs.map((log) => (
                   <motion.div
                     key={log.id}
                     whileHover={{ y: reduce ? 0 : -1 }}
-                    className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
+                    className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
@@ -761,6 +875,12 @@ export default function AdminDashboard() {
                     </p>
                   </motion.div>
                 ))}
+
+                {paginatedLogs.length === 0 && (
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Nessun log.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
@@ -768,7 +888,7 @@ export default function AdminDashboard() {
                   type="button"
                   onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
                   disabled={logsPage === 1}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Prev
                 </button>
@@ -781,7 +901,7 @@ export default function AdminDashboard() {
                     setLogsPage((p) => Math.min(logsTotalPages, p + 1))
                   }
                   disabled={logsPage === logsTotalPages}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Next
                 </button>
