@@ -10,6 +10,7 @@ import {
   Crown,
   BadgeCheck,
   UserCog,
+  Server,
 } from "lucide-react";
 
 import BackgroundQueue from "./BackgroundQueue";
@@ -63,6 +64,7 @@ export default function AdminDashboard() {
       { id: "backgrounds", label: "Background", icon: FileText },
       { id: "users", label: "Utenti", icon: UsersIcon },
       { id: "logs", label: "Log", icon: Activity },
+      { id: "serverLogs", label: "Log server", icon: Server }, // ✅ NEW
     ],
     []
   );
@@ -79,6 +81,7 @@ export default function AdminDashboard() {
 
   const [users, setUsers] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [serverLogs, setServerLogs] = useState([]); // ✅ NEW
 
   const [loadingData, setLoadingData] = useState(true);
   const [updatingRoleIds, setUpdatingRoleIds] = useState([]);
@@ -88,6 +91,7 @@ export default function AdminDashboard() {
 
   const [usersPage, setUsersPage] = useState(1);
   const [logsPage, setLogsPage] = useState(1);
+  const [serverLogsPage, setServerLogsPage] = useState(1); // ✅ NEW
 
   const shellCard =
     "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
@@ -209,6 +213,28 @@ export default function AdminDashboard() {
           }))
         );
       }
+
+      // ✅ NEW: SERVER LOGS
+      const { data: serverLogsData, error: serverLogsError } = await supabase
+        .from("server_logs")
+        .select("id, plugin, type, description, embeds, created_at")
+        .order("created_at", { ascending: false });
+
+      if (serverLogsError) {
+        console.error(serverLogsError);
+        await alertError("Errore", "Impossibile caricare i log server.");
+      } else {
+        setServerLogs(
+          (serverLogsData || []).map((l) => ({
+            id: l.id,
+            plugin: l.plugin ?? "unknown",
+            type: l.type ?? "GENERIC",
+            description: l.description ?? "",
+            embeds: l.embeds ?? null,
+            createdAt: l.created_at,
+          }))
+        );
+      }
     } catch (err) {
       console.error("Error loading admin data", err);
       await alertError("Errore", "Errore imprevisto nel caricamento dati.");
@@ -230,13 +256,24 @@ export default function AdminDashboard() {
     1,
     Math.ceil(logs.length / PAGE_SIZE_OVERVIEW)
   );
+
   const usersTotalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE_FULL));
   const logsTotalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE_FULL));
+  const serverLogsTotalPages = Math.max(
+    1,
+    Math.ceil(serverLogs.length / PAGE_SIZE_FULL)
+  ); // ✅ NEW
 
   const overviewUsers = paginate(users, overviewUsersPage, PAGE_SIZE_OVERVIEW);
   const overviewLogs = paginate(logs, overviewLogsPage, PAGE_SIZE_OVERVIEW);
+
   const paginatedUsers = paginate(users, usersPage, PAGE_SIZE_FULL);
   const paginatedLogs = paginate(logs, logsPage, PAGE_SIZE_FULL);
+  const paginatedServerLogs = paginate(
+    serverLogs,
+    serverLogsPage,
+    PAGE_SIZE_FULL
+  ); // ✅ NEW
 
   const roleLabel = (u) =>
     u.isAdmin ? "Admin" : u.isModerator ? "Mod" : "User";
@@ -357,6 +394,7 @@ export default function AdminDashboard() {
     if (!isAdmin) return null;
     if (tabId === "users") return stats.totalUsers;
     if (tabId === "logs") return logs.length;
+    if (tabId === "serverLogs") return serverLogs.length; // ✅ NEW
     if (tabId === "backgrounds") return stats.pendingBackgrounds;
     return null;
   };
@@ -952,6 +990,107 @@ export default function AdminDashboard() {
                     setLogsPage((p) => Math.min(logsTotalPages, p + 1))
                   }
                   disabled={logsPage === logsTotalPages}
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </motion.section>
+        )}
+
+        {/* ✅ NEW: SERVER LOGS */}
+        {isAdmin && activeTab === "serverLogs" && (
+          <motion.section key="serverLogs" {...pageAnim} className="space-y-4">
+            <div className={`${shellCard} p-4 md:p-5 space-y-3`}>
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
+                <div>
+                  <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                    <Server className="w-5 h-5" />
+                    Log server
+                  </h2>
+                  <p className="text-xs md:text-sm text-[var(--color-text-muted)]">
+                    Eventi dai plugin/risorse FiveM (payload embeds per
+                    Discord).
+                  </p>
+                </div>
+                <span className="text-xs text-[var(--color-text-muted)]">
+                  {buildRangeLabel(
+                    serverLogs.length,
+                    serverLogsPage,
+                    PAGE_SIZE_FULL
+                  )}
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-[520px] overflow-y-auto">
+                {paginatedServerLogs.map((l) => (
+                  <div
+                    key={l.id}
+                    className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+                          {l.plugin}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+                          {l.type}
+                        </span>
+                        {l.embeds && (
+                          <span className="px-2 py-0.5 rounded-full border border-[var(--color-border)] bg-black/20 text-[10px] text-[var(--color-text-muted)]">
+                            embeds
+                          </span>
+                        )}
+                      </div>
+
+                      <span className="text-[10px] text-[var(--color-text-muted)]">
+                        {new Date(l.createdAt).toLocaleString("it-IT", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
+                      </span>
+                    </div>
+
+                    <p className="mt-2 text-xs md:text-sm text-[var(--color-text)]">
+                      {l.description}
+                    </p>
+
+                    {l.embeds && (
+                      <pre className="mt-2 text-[10px] leading-relaxed overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-black/30 p-3 text-[var(--color-text-muted)]">
+                        {JSON.stringify(l.embeds, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+
+                {paginatedServerLogs.length === 0 && (
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Nessun log server disponibile.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
+                <button
+                  type="button"
+                  onClick={() => setServerLogsPage((p) => Math.max(1, p - 1))}
+                  disabled={serverLogsPage === 1}
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                >
+                  Prev
+                </button>
+                <span>
+                  Pagina {serverLogsPage} / {serverLogsTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setServerLogsPage((p) =>
+                      Math.min(serverLogsTotalPages, p + 1)
+                    )
+                  }
+                  disabled={serverLogsPage === serverLogsTotalPages}
                   className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Next
