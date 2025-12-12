@@ -508,8 +508,6 @@ export default function Navbar() {
                 "border-l border-[var(--color-border)]",
                 "bg-[#0b0d1b] text-[var(--color-text)]",
                 "shadow-[0_22px_80px_rgba(0,0,0,0.85)]",
-                // ✅ blur solo se supportato
-                "supports-[backdrop-filter]:backdrop-blur-xl supports-[backdrop-filter]:bg-[#0b0d1b]/92",
               ].join(" ")}
             >
               <div className="p-4 flex items-center justify-between border-b border-[var(--color-border)]/60">
