@@ -1,4 +1,3 @@
-// src/pages/admin/BackgroundQueue.jsx
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
@@ -14,7 +13,6 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import {
   alertError,
-  alertInfo,
   alertWarning,
   confirmAction,
   toast,
@@ -66,14 +64,8 @@ export default function BackgroundQueue() {
           status,
           nome,
           cognome,
-          sesso,
-          stato_nascita,
-          etnia,
-          data_nascita,
           storia_breve,
           condanne_penali,
-          patologie,
-          dipendenze,
           segni_distintivi,
           aspetti_caratteriali,
           rejection_reason,
@@ -87,153 +79,84 @@ export default function BackgroundQueue() {
         )
         .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching backgrounds", error);
-        await alertError("Errore", "Impossibile caricare la coda background.");
-        return;
-      }
+      if (error) throw error;
 
       const mapped =
         data?.map((row) => ({
           id: row.id,
-          userId: row.user_id,
+          status: row.status,
+          nome: row.nome,
+          cognome: row.cognome,
           discordName: row.profiles?.discord_username ?? "Senza nome",
           discordId: row.profiles?.discord_id ?? "",
-          nome: row.nome ?? "",
-          cognome: row.cognome ?? "",
-          status: row.status ?? "pending",
           submittedAt: row.created_at,
           lastUpdatedAt: row.updated_at,
           rejectionReason: row.rejection_reason ?? "",
           data: {
-            sesso: row.sesso ?? "",
-            statoNascita: row.stato_nascita ?? "",
-            etnia: row.etnia ?? "",
-            dataNascita: row.data_nascita ?? "",
             storiaBreve: row.storia_breve ?? "",
             condannePenali: row.condanne_penali ?? "",
-            patologie: Array.isArray(row.patologie) ? row.patologie : [],
-            dipendenze: Array.isArray(row.dipendenze) ? row.dipendenze : [],
             segniDistintivi: row.segni_distintivi ?? "",
             aspettiCaratteriali: row.aspetti_caratteriali ?? "",
           },
         })) ?? [];
 
       setItems(mapped);
-      if (!mapped.find((i) => i.id === selectedId))
-        setSelectedId(mapped[0]?.id ?? null);
+      setSelectedId(mapped[0]?.id ?? null);
       setEditMode(false);
     } catch (err) {
-      console.error("Error loading backgrounds", err);
-      await alertError("Errore", "Errore imprevisto nel caricamento dati.");
+      console.error(err);
+      await alertError("Errore", "Impossibile caricare i background.");
     } finally {
       setLoadingData(false);
     }
   };
 
   useEffect(() => {
-    if (!profile || !canModerate) return;
-    loadBackgrounds();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (profile && canModerate) loadBackgrounds();
+    // eslint-disable-next-line
   }, [profile]);
 
-  const filtered = items.filter((item) =>
-    filter === "all" ? true : item.status === filter
+  const filtered = items.filter((i) =>
+    filter === "all" ? true : i.status === filter
   );
-  const selected =
-    items.find((i) => i.id === selectedId) ?? filtered[0] ?? null;
+  const selected = filtered.find((i) => i.id === selectedId) ?? null;
 
-  const handleSelect = (id) => {
-    setSelectedId(id);
-    setRejectionDraft("");
-    setEditMode(false);
-  };
+  const updateStatus = async (status) => {
+    if (!selected || selected.status === "approved") return;
 
-  const writeLog = async ({ type, message, meta }) => {
-    try {
-      await supabase.from("logs").insert({
-        type,
-        message,
-        meta: meta ? JSON.stringify(meta) : null,
-      });
-    } catch (err) {
-      console.error("Error writing log", err);
-      // log non deve rompere la UI: toast leggero
-      toast("error", "Impossibile scrivere nei log");
+    if (status === "rejected" && !rejectionDraft.trim()) {
+      await alertWarning("Motivo mancante", "Inserisci una motivazione.");
+      return;
     }
-  };
 
-  const updateStatus = async (id, status, reason = "") => {
-    if (!canModerate) return;
+    const ok = await confirmAction({
+      title: "Conferma operazione",
+      text: "Vuoi procedere?",
+      confirmText: "Sì",
+      cancelText: "Annulla",
+    });
+    if (!ok) return;
+
     setUpdating(true);
-
     try {
-      const payload = {
-        status,
-        updated_at: new Date().toISOString(),
-        rejection_reason: status === "rejected" ? reason : null,
-      };
-
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("characters")
-        .update(payload)
-        .eq("id", id)
-        .select(
-          `
-          id,
-          nome,
-          cognome,
+        .update({
           status,
-          user_id,
-          profiles:profiles!characters_user_id_fkey (
-            discord_username,
-            discord_id
-          )
-        `
-        )
-        .single();
+          rejection_reason: status === "rejected" ? rejectionDraft : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", selected.id);
 
-      if (error) {
-        console.error(error);
-        await alertError(
-          "Errore",
-          "Errore durante l'aggiornamento dello stato."
-        );
-        return;
-      }
+      if (error) throw error;
 
       setItems((prev) =>
-        prev.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                status,
-                rejectionReason:
-                  status === "rejected" ? reason : item.rejectionReason,
-                lastUpdatedAt: new Date().toISOString(),
-              }
-            : item
+        prev.map((i) =>
+          i.id === selected.id
+            ? { ...i, status, rejectionReason: rejectionDraft }
+            : i
         )
       );
-
-      await writeLog({
-        type: status === "approved" ? "BG_APPROVED" : "BG_REJECTED",
-        message:
-          status === "approved"
-            ? `Background approvato per ${data.nome} ${data.cognome} (${
-                data.profiles?.discord_username ?? "?"
-              }).`
-            : `Background rifiutato per ${data.nome} ${data.cognome} (${
-                data.profiles?.discord_username ?? "?"
-              }). Motivo: ${reason}`,
-        meta: {
-          character_id: data.id,
-          status,
-          moderator_id: profile?.id ?? null,
-          user_id: data.user_id,
-          discord_id: data.profiles?.discord_id ?? null,
-        },
-      });
 
       toast(
         "success",
@@ -241,478 +164,104 @@ export default function BackgroundQueue() {
       );
     } catch (err) {
       console.error(err);
-      await alertError(
-        "Errore",
-        "Errore generico durante l'aggiornamento dello status."
-      );
+      await alertError("Errore", "Operazione fallita.");
     } finally {
       setUpdating(false);
+      setRejectionDraft("");
     }
   };
 
-  const handleApprove = async () => {
-    if (!selected) return;
-
-    const ok = await confirmAction({
-      title: "Approvare il background?",
-      text: `Stai per approvare il background di ${selected.nome} ${selected.cognome}.`,
-      confirmText: "Sì, approva",
-      cancelText: "Annulla",
-      icon: "question",
-    });
-
-    if (!ok) return;
-
-    await updateStatus(selected.id, "approved");
-  };
-
-  const handleReject = async () => {
-    if (!selected) return;
-
-    if (!rejectionDraft.trim()) {
-      await alertWarning(
-        "Motivazione mancante",
-        "Inserisci una motivazione per il rifiuto."
-      );
-      return;
-    }
-
-    const ok = await confirmAction({
-      title: "Rifiutare il background?",
-      text: `Stai per rifiutare il background di ${selected.nome} ${selected.cognome}.`,
-      confirmText: "Sì, rifiuta",
-      cancelText: "Annulla",
-    });
-
-    if (!ok) return;
-
-    await updateStatus(selected.id, "rejected", rejectionDraft.trim());
-    setRejectionDraft("");
-  };
-
-  const startEdit = async () => {
-    if (!selected || !isAdmin) return;
-
-    const ok = await confirmAction({
-      title: "Modificare il background?",
-      text: "Entrerai in modalità modifica. Ricordati di salvare le modifiche.",
-      confirmText: "Ok, modifica",
-      cancelText: "Annulla",
-      icon: "info",
-    });
-
-    if (!ok) return;
-
-    setEditDraft({
-      storiaBreve: selected.data.storiaBreve || "",
-      condannePenali: selected.data.condannePenali || "",
-      segniDistintivi: selected.data.segniDistintivi || "",
-      aspettiCaratteriali: selected.data.aspettiCaratteriali || "",
-    });
-    setEditMode(true);
-  };
-
-  const cancelEdit = async () => {
-    const ok = await confirmAction({
-      title: "Annullare le modifiche?",
-      text: "Le modifiche non salvate andranno perse.",
-      confirmText: "Sì, annulla",
-      cancelText: "Torna indietro",
-    });
-
-    if (!ok) return;
-
-    setEditMode(false);
-  };
-
-  const saveEdit = async () => {
-    if (!selected || !isAdmin) return;
-
-    const ok = await confirmAction({
-      title: "Salvare le modifiche?",
-      text: "Le modifiche verranno salvate nel background.",
-      confirmText: "Sì, salva",
-      cancelText: "Annulla",
-      icon: "question",
-    });
-
-    if (!ok) return;
-
-    setUpdating(true);
-
-    try {
-      const { data, error } = await supabase
-        .from("characters")
-        .update({
-          storia_breve: editDraft.storiaBreve,
-          condanne_penali: editDraft.condannePenali,
-          segni_distintivi: editDraft.segniDistintivi,
-          aspetti_caratteriali: editDraft.aspettiCaratteriali,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", selected.id)
-        .select("*")
-        .single();
-
-      if (error) {
-        console.error(error);
-        await alertError("Errore", "Errore durante il salvataggio.");
-        return;
-      }
-
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === selected.id
-            ? {
-                ...item,
-                lastUpdatedAt: data.updated_at,
-                data: {
-                  ...item.data,
-                  storiaBreve: data.storia_breve ?? "",
-                  condannePenali: data.condanne_penali ?? "",
-                  segniDistintivi: data.segni_distintivi ?? "",
-                  aspettiCaratteriali: data.aspetti_caratteriali ?? "",
-                },
-              }
-            : item
-        )
-      );
-
-      await writeLog({
-        type: "BG_EDITED_ADMIN",
-        message: `Background modificato da admin per ${data.nome} ${data.cognome}.`,
-        meta: { character_id: data.id, admin_id: profile?.id ?? null },
-      });
-
-      setEditMode(false);
-      toast("success", "Modifiche salvate");
-    } catch (err) {
-      console.error(err);
-      await alertError("Errore", "Errore generico durante il salvataggio.");
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const cardAnim = {
-    initial: { opacity: 0, y: reduce ? 0 : 8 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.2 } },
-    exit: { opacity: 0, y: reduce ? 0 : -6, transition: { duration: 0.15 } },
-  };
-
-  if (loading) {
-    return (
-      <p className="text-sm text-[var(--color-text-muted)]">
-        Caricamento sessione...
-      </p>
-    );
-  }
+  if (loading) return null;
 
   if (!profile || !canModerate) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
-        Non hai i permessi per moderare i background.
+        Non hai i permessi.
       </p>
     );
   }
 
   return (
-    <section className="space-y-6">
-      <header className="space-y-2 mb-2">
-        <h2 className="text-xl md:text-2xl font-semibold">
-          Moderazione background
-        </h2>
-        <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-          Coda dei background (tabella <code>characters</code>).
-        </p>
-      </header>
-
-      {loadingData ? (
-        <p className="text-xs text-[var(--color-text-muted)]">
-          Caricamento background…
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Lista */}
-          <aside className="lg:col-span-5 xl:col-span-4">
-            <div className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/80 backdrop-blur p-3 space-y-3">
-              <div className="flex flex-wrap gap-2 text-xs">
-                {[
-                  { id: "all", label: "Tutti" },
-                  { id: "pending", label: "In attesa" },
-                  { id: "approved", label: "Approvati" },
-                  { id: "rejected", label: "Rifiutati" },
-                ].map((f) => (
-                  <motion.button
-                    key={f.id}
-                    type="button"
-                    whileTap={{ scale: reduce ? 1 : 0.97 }}
-                    onClick={() => {
-                      setFilter(f.id);
-                      setEditMode(false);
-                    }}
-                    className={`px-3 py-1.5 rounded-full border text-xs transition ${
-                      filter === f.id
-                        ? "bg-[var(--violet)] text-white border-[var(--violet-soft)]"
-                        : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-                    }`}
-                  >
-                    {f.label}
-                  </motion.button>
-                ))}
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
-                <span>{filtered.length} background trovati</span>
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: reduce ? 1 : 0.97 }}
-                  onClick={loadBackgrounds}
-                  className="px-2 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5 inline-flex items-center gap-2"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  Aggiorna
-                </motion.button>
-              </div>
-
-              <div className="max-h-[520px] overflow-y-auto space-y-2 pt-1">
-                <AnimatePresence initial={false}>
-                  {filtered.map((item) => {
-                    const isActive = selected?.id === item.id;
-                    return (
-                      <motion.button
-                        key={item.id}
-                        type="button"
-                        layout
-                        {...cardAnim}
-                        whileHover={{ y: reduce ? 0 : -1 }}
-                        onClick={() => handleSelect(item.id)}
-                        className={`w-full text-left rounded-xl border px-3 py-3 text-xs md:text-sm transition flex flex-col gap-1 ${
-                          isActive
-                            ? "border-[var(--blue)] bg-[var(--color-surface)]"
-                            : "border-[var(--color-border)] bg-black/20 hover:bg-white/5"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium truncate">
-                            {item.nome} {item.cognome}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full border text-[10px] ${
-                              STATUS_COLORS[item.status]
-                            }`}
-                          >
-                            {STATUS_LABELS[item.status]}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--color-text-muted)]">
-                          <span className="truncate">{item.discordName}</span>
-                          <span>
-                            Inviato:{" "}
-                            {new Date(item.submittedAt).toLocaleString(
-                              "it-IT",
-                              {
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              }
-                            )}
-                          </span>
-                        </div>
-                      </motion.button>
-                    );
-                  })}
-                </AnimatePresence>
-
-                {filtered.length === 0 && (
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Nessun background con questo filtro.
-                  </p>
-                )}
-              </div>
-            </div>
-          </aside>
-
-          {/* Dettaglio */}
-          <main className="lg:col-span-7 xl:col-span-8">
-            <AnimatePresence mode="wait">
-              {selected ? (
-                <motion.div
-                  key={selected.id}
-                  initial={{ opacity: 0, y: reduce ? 0 : 10 }}
-                  animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
-                  exit={{
-                    opacity: 0,
-                    y: reduce ? 0 : -8,
-                    transition: { duration: 0.15 },
-                  }}
-                  className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/90 backdrop-blur p-4 md:p-5 space-y-4"
-                >
-                  {/* Header */}
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                        Background
-                      </p>
-                      <h2 className="text-lg md:text-xl font-semibold">
-                        {selected.nome} {selected.cognome}
-                      </h2>
-                      <p className="text-xs text-[var(--color-text-muted)]">
-                        {selected.discordName} • ID: {selected.discordId}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)]">
-                      <span
-                        className={`px-3 py-1 rounded-full border text-[10px] ${
-                          STATUS_COLORS[selected.status]
-                        }`}
-                      >
-                        {STATUS_LABELS[selected.status]}
-                      </span>
-                      <span>
-                        Inviato:{" "}
-                        {new Date(selected.submittedAt).toLocaleString(
-                          "it-IT",
-                          {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          }
-                        )}
-                      </span>
-                      <span>
-                        Ultimo aggiornamento:{" "}
-                        {new Date(selected.lastUpdatedAt).toLocaleString(
-                          "it-IT",
-                          {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          }
-                        )}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Sezioni (qui lascia pure le tue) */}
-                  <div className="space-y-4 text-xs md:text-sm">
-                    <section className="rounded-xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
-                      <h3 className="font-semibold text-sm md:text-base">
-                        II. Storia del personaggio
-                      </h3>
-
-                      <div>
-                        <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                          Storia in breve
-                        </p>
-                        {editMode ? (
-                          <textarea
-                            className="w-full min-h-[90px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
-                            value={editDraft.storiaBreve}
-                            onChange={(e) =>
-                              setEditDraft((prev) => ({
-                                ...prev,
-                                storiaBreve: e.target.value,
-                              }))
-                            }
-                          />
-                        ) : (
-                          <p className="text-[var(--color-text)] whitespace-pre-line">
-                            {selected.data.storiaBreve || "-"}
-                          </p>
-                        )}
-                      </div>
-                    </section>
-                  </div>
-
-                  {/* Azioni */}
-                  <div className="mt-4 border-t border-[var(--color-border)] pt-4 space-y-3">
-                    {!editMode && (
-                      <>
-                        <textarea
-                          className="w-full min-h-[90px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
-                          placeholder="Motivazione del rifiuto..."
-                          value={rejectionDraft}
-                          onChange={(e) => setRejectionDraft(e.target.value)}
-                        />
-
-                        <div className="flex flex-wrap gap-2 text-xs md:text-sm">
-                          <motion.button
-                            type="button"
-                            whileTap={{ scale: reduce ? 1 : 0.97 }}
-                            onClick={handleApprove}
-                            disabled={updating}
-                            className="px-4 py-2 rounded-full font-semibold bg-emerald-500/90 text-[#050816] shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            Approva
-                          </motion.button>
-
-                          <motion.button
-                            type="button"
-                            whileTap={{ scale: reduce ? 1 : 0.97 }}
-                            onClick={handleReject}
-                            disabled={updating}
-                            className="px-4 py-2 rounded-full font-semibold bg-red-500/90 text-white shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
-                          >
-                            <XCircle className="w-4 h-4" />
-                            Rifiuta
-                          </motion.button>
-
-                          {isAdmin && (
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={startEdit}
-                              disabled={updating}
-                              className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 inline-flex items-center gap-2"
-                            >
-                              <Pencil className="w-4 h-4" />
-                              Modifica BG
-                            </motion.button>
-                          )}
-                        </div>
-                      </>
-                    )}
-
-                    {editMode && (
-                      <div className="flex flex-wrap gap-2 text-xs md:text-sm">
-                        <motion.button
-                          type="button"
-                          whileTap={{ scale: reduce ? 1 : 0.97 }}
-                          onClick={saveEdit}
-                          disabled={updating}
-                          className="px-4 py-2 rounded-full font-semibold bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
-                        >
-                          <Save className="w-4 h-4" />
-                          Salva modifiche
-                        </motion.button>
-
-                        <motion.button
-                          type="button"
-                          whileTap={{ scale: reduce ? 1 : 0.97 }}
-                          onClick={cancelEdit}
-                          disabled={updating}
-                          className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 disabled:opacity-50 inline-flex items-center gap-2"
-                        >
-                          <Ban className="w-4 h-4" />
-                          Annulla
-                        </motion.button>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.p
-                  key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-sm text-[var(--color-text-muted)]"
-                >
-                  Nessun background selezionato.
-                </motion.p>
-              )}
-            </AnimatePresence>
-          </main>
+    <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <aside className="lg:col-span-4 space-y-2">
+        <div className="flex gap-2 text-xs">
+          {["all", "pending", "approved", "rejected"].map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className="px-3 py-1 rounded-full border"
+            >
+              {STATUS_LABELS[f] ?? "Tutti"}
+            </button>
+          ))}
         </div>
-      )}
+
+        <div className="space-y-2">
+          {filtered.map((bg) => (
+            <button
+              key={bg.id}
+              onClick={() => {
+                setSelectedId(bg.id);
+                setEditMode(false);
+              }}
+              className="w-full text-left border rounded-xl p-3"
+            >
+              <div className="flex justify-between">
+                <span>
+                  {bg.nome} {bg.cognome}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full border text-[10px] ${
+                    STATUS_COLORS[bg.status]
+                  }`}
+                >
+                  {STATUS_LABELS[bg.status]}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <main className="lg:col-span-8">
+        {selected && (
+          <div className="border rounded-2xl p-4 space-y-4">
+            <h2 className="text-lg font-semibold">
+              {selected.nome} {selected.cognome}
+            </h2>
+
+            {selected.status === "approved" ? (
+              <p className="text-sm text-emerald-300">
+                Background approvato – non modificabile.
+              </p>
+            ) : (
+              <>
+                <textarea
+                  className="w-full border rounded-xl p-2"
+                  placeholder="Motivazione rifiuto"
+                  value={rejectionDraft}
+                  onChange={(e) => setRejectionDraft(e.target.value)}
+                />
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => updateStatus("approved")}
+                    className="px-4 py-2 bg-emerald-500 rounded-full"
+                  >
+                    Approva
+                  </button>
+                  <button
+                    onClick={() => updateStatus("rejected")}
+                    className="px-4 py-2 bg-red-500 rounded-full"
+                  >
+                    Rifiuta
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </main>
     </section>
   );
 }
