@@ -1,4 +1,3 @@
-// src/pages/admin/AdminDashboard.jsx
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
@@ -7,6 +6,10 @@ import {
   Users as UsersIcon,
   Activity,
   Shield,
+  RefreshCw,
+  Crown,
+  BadgeCheck,
+  UserCog,
 } from "lucide-react";
 
 import BackgroundQueue from "./BackgroundQueue";
@@ -14,7 +17,6 @@ import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import {
   alertError,
-  alertInfo,
   alertWarning,
   confirmAction,
   toast,
@@ -32,18 +34,28 @@ const statusPill = (status) => {
     case "rejected":
       return "bg-red-400/15 text-red-300 border-red-400/40";
     default:
-      return "bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]";
+      return "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]";
+  }
+};
+
+const rolePill = (role) => {
+  switch (role) {
+    case "Admin":
+      return "bg-[var(--violet)]/15 text-[var(--color-accent-cool)] border-[var(--violet-soft)]";
+    case "Mod":
+      return "bg-amber-400/15 text-amber-300 border-amber-400/40";
+    default:
+      return "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]";
   }
 };
 
 export default function AdminDashboard() {
   const { profile, loading: authLoading } = useAuth();
+  const reduce = useReducedMotion();
 
   const isAdmin = !!profile?.is_admin;
   const isMod = !!profile?.is_moderator;
   const isStaff = isAdmin || isMod;
-
-  const reduce = useReducedMotion();
 
   const TABS = useMemo(
     () => [
@@ -77,6 +89,12 @@ export default function AdminDashboard() {
   const [usersPage, setUsersPage] = useState(1);
   const [logsPage, setLogsPage] = useState(1);
 
+  const shellCard =
+    "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
+
+  const softPanel =
+    "rounded-2xl border border-[var(--color-border)] bg-black/20";
+
   const paginate = (items, page, pageSize) => {
     const start = (page - 1) * pageSize;
     return items.slice(start, start + pageSize);
@@ -97,114 +115,111 @@ export default function AdminDashboard() {
     if (!isAdmin && activeTab !== "backgrounds") setActiveTab("backgrounds");
   }, [isAdmin, activeTab]);
 
-  useEffect(() => {
+  const fetchData = async () => {
     if (!profile) return;
 
+    // i mod vedono solo backgrounds: non carichiamo overview/users/logs
     if (!isAdmin) {
       setLoadingData(false);
       return;
     }
 
-    const fetchData = async () => {
-      setLoadingData(true);
-      try {
-        const [
-          usersCountRes,
-          totalBgRes,
-          pendingBgRes,
-          approvedBgRes,
-          rejectedBgRes,
-        ] = await Promise.all([
-          supabase.from("profiles").select("*", { count: "exact", head: true }),
-          supabase
-            .from("characters")
-            .select("*", { count: "exact", head: true }),
-          supabase
-            .from("characters")
-            .select("*", { count: "exact", head: true })
-            .eq("status", "pending"),
-          supabase
-            .from("characters")
-            .select("*", { count: "exact", head: true })
-            .eq("status", "approved"),
-          supabase
-            .from("characters")
-            .select("*", { count: "exact", head: true })
-            .eq("status", "rejected"),
-        ]);
+    setLoadingData(true);
+    try {
+      const [
+        usersCountRes,
+        totalBgRes,
+        pendingBgRes,
+        approvedBgRes,
+        rejectedBgRes,
+      ] = await Promise.all([
+        supabase.from("profiles").select("*", { count: "exact", head: true }),
+        supabase.from("characters").select("*", { count: "exact", head: true }),
+        supabase
+          .from("characters")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "pending"),
+        supabase
+          .from("characters")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "approved"),
+        supabase
+          .from("characters")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "rejected"),
+      ]);
 
-        setStats({
-          totalUsers: usersCountRes.count ?? 0,
-          totalBackgrounds: totalBgRes.count ?? 0,
-          pendingBackgrounds: pendingBgRes.count ?? 0,
-          approvedBackgrounds: approvedBgRes.count ?? 0,
-          rejectedBackgrounds: rejectedBgRes.count ?? 0,
+      setStats({
+        totalUsers: usersCountRes.count ?? 0,
+        totalBackgrounds: totalBgRes.count ?? 0,
+        pendingBackgrounds: pendingBgRes.count ?? 0,
+        approvedBackgrounds: approvedBgRes.count ?? 0,
+        rejectedBackgrounds: rejectedBgRes.count ?? 0,
+      });
+
+      const { data: usersData, error: usersError } = await supabase
+        .from("profiles")
+        .select("id, discord_username, created_at, is_moderator, is_admin")
+        .order("created_at", { ascending: false });
+
+      if (usersError) {
+        console.error(usersError);
+        await alertError("Errore", "Impossibile caricare la lista utenti.");
+      } else {
+        const { data: charsData, error: charsErr } = await supabase
+          .from("characters")
+          .select("id, user_id, status, created_at")
+          .order("created_at", { ascending: false });
+
+        if (charsErr) console.error(charsErr);
+
+        const latestBgByUser = new Map();
+        (charsData || []).forEach((ch) => {
+          if (!latestBgByUser.has(ch.user_id))
+            latestBgByUser.set(ch.user_id, ch.status);
         });
 
-        // ✅ include is_admin
-        const { data: usersData, error: usersError } = await supabase
-          .from("profiles")
-          .select("id, discord_username, created_at, is_moderator, is_admin")
-          .order("created_at", { ascending: false });
-
-        if (usersError) {
-          console.error(usersError);
-          await alertError("Errore", "Impossibile caricare la lista utenti.");
-        } else {
-          const { data: charsData, error: charsErr } = await supabase
-            .from("characters")
-            .select("id, user_id, status, created_at")
-            .order("created_at", { ascending: false });
-
-          if (charsErr) console.error(charsErr);
-
-          const latestBgByUser = new Map();
-          (charsData || []).forEach((ch) => {
-            if (!latestBgByUser.has(ch.user_id)) {
-              latestBgByUser.set(ch.user_id, ch.status);
-            }
-          });
-
-          // ✅ aggiungi isAdmin nello state users
-          setUsers(
-            (usersData || []).map((u) => ({
-              id: u.id,
-              discordName: u.discord_username ?? "Senza nome",
-              joinedAt: u.created_at,
-              bgStatus: latestBgByUser.get(u.id) ?? "none",
-              isModerator: !!u.is_moderator,
-              isAdmin: !!u.is_admin,
-            }))
-          );
-        }
-
-        const { data: logsData, error: logsError } = await supabase
-          .from("logs")
-          .select("id, type, message, created_at")
-          .order("created_at", { ascending: false });
-
-        if (logsError) {
-          console.error(logsError);
-          await alertError("Errore", "Impossibile caricare i log.");
-        } else {
-          setLogs(
-            (logsData || []).map((l) => ({
-              id: l.id,
-              type: l.type ?? "GENERIC",
-              message: l.message ?? "",
-              createdAt: l.created_at,
-            }))
-          );
-        }
-      } catch (err) {
-        console.error("Error loading admin data", err);
-        await alertError("Errore", "Errore imprevisto nel caricamento dati.");
-      } finally {
-        setLoadingData(false);
+        setUsers(
+          (usersData || []).map((u) => ({
+            id: u.id,
+            discordName: u.discord_username ?? "Senza nome",
+            joinedAt: u.created_at,
+            bgStatus: latestBgByUser.get(u.id) ?? "none",
+            isModerator: !!u.is_moderator,
+            isAdmin: !!u.is_admin,
+          }))
+        );
       }
-    };
 
+      const { data: logsData, error: logsError } = await supabase
+        .from("logs")
+        .select("id, type, message, created_at")
+        .order("created_at", { ascending: false });
+
+      if (logsError) {
+        console.error(logsError);
+        await alertError("Errore", "Impossibile caricare i log.");
+      } else {
+        setLogs(
+          (logsData || []).map((l) => ({
+            id: l.id,
+            type: l.type ?? "GENERIC",
+            message: l.message ?? "",
+            createdAt: l.created_at,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("Error loading admin data", err);
+      await alertError("Errore", "Errore imprevisto nel caricamento dati.");
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, isAdmin]);
 
   const overviewUsersTotalPages = Math.max(
@@ -223,7 +238,6 @@ export default function AdminDashboard() {
   const paginatedUsers = paginate(users, usersPage, PAGE_SIZE_FULL);
   const paginatedLogs = paginate(logs, logsPage, PAGE_SIZE_FULL);
 
-  // ✅ 3 ruoli su 2 flag
   const roleLabel = (u) =>
     u.isAdmin ? "Admin" : u.isModerator ? "Mod" : "User";
 
@@ -240,7 +254,6 @@ export default function AdminDashboard() {
 
     const current = users.find((u) => u.id === userId);
     const currentRole = current ? roleLabel(current) : "User";
-
     if (currentRole === nextRole) return;
 
     const ok = await confirmAction({
@@ -311,10 +324,11 @@ export default function AdminDashboard() {
 
   const pageAnim = {
     initial: { opacity: 0, y: reduce ? 0 : 10 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.25 } },
-    exit: { opacity: 0, y: reduce ? 0 : -8, transition: { duration: 0.18 } },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.22 } },
+    exit: { opacity: 0, y: reduce ? 0 : -8, transition: { duration: 0.16 } },
   };
 
+  // ---------- GATES ----------
   if (authLoading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">Caricamento…</p>
@@ -337,88 +351,206 @@ export default function AdminDashboard() {
     );
   }
 
+  const staffRole = isAdmin ? "Admin" : "Mod";
+
+  const TabCount = (tabId) => {
+    if (!isAdmin) return null;
+    if (tabId === "users") return stats.totalUsers;
+    if (tabId === "logs") return logs.length;
+    if (tabId === "backgrounds") return stats.pendingBackgrounds;
+    return null;
+  };
+
+  // ---------- UI ----------
   return (
     <section className="space-y-6">
-      <header className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5 text-[var(--color-text-muted)]" />
-          <h1 className="text-2xl md:text-3xl font-semibold">
-            {isAdmin ? "Admin dashboard" : "Area moderazione"}
-          </h1>
-        </div>
+      {/* HEADER */}
+      <header className={`${shellCard} p-5 md:p-6`}>
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-black/20 grid place-items-center">
+                <Shield className="w-5 h-5 text-[var(--color-text-muted)]" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-xl md:text-2xl font-semibold truncate">
+                  {isAdmin ? "Admin Dashboard" : "Area Moderazione"}
+                </h1>
+                <p className="text-xs md:text-sm text-[var(--color-text-muted)] truncate">
+                  {isAdmin
+                    ? "Controllo completo su utenti, background e log."
+                    : "Moderazione background (approva / rifiuta)."}
+                </p>
+              </div>
+            </div>
 
-        <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-3xl">
-          {isAdmin
-            ? "Panoramica su background, iscritti e attività del server. Accesso riservato allo staff admin."
-            : "Area staff dedicata alla moderazione dei background. Puoi solo approvare o rifiutare i BG."}
-        </p>
-      </header>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span
+                className={`px-3 py-1 rounded-full border ${rolePill(
+                  staffRole
+                )}`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  {isAdmin ? (
+                    <Crown className="w-4 h-4" />
+                  ) : (
+                    <BadgeCheck className="w-4 h-4" />
+                  )}
+                  Ruolo: {staffRole}
+                </span>
+              </span>
 
-      <nav className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/80 backdrop-blur px-3 py-2 flex flex-wrap gap-2 text-xs md:text-sm">
-        {visibleTabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          const Icon = tab.icon;
-          return (
+              <span className="px-3 py-1 rounded-full border border-[var(--color-border)] bg-black/20 text-[var(--color-text-muted)]">
+                Staff ID:{" "}
+                <span className="font-mono">
+                  {profile.discord_id ?? profile.id}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 justify-start lg:justify-end">
+            {isAdmin && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: reduce ? 1 : 0.97 }}
+                onClick={fetchData}
+                className="px-4 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 hover:bg-white/5 text-xs md:text-sm font-semibold inline-flex items-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Aggiorna dati
+              </motion.button>
+            )}
             <motion.button
-              key={tab.id}
               type="button"
               whileTap={{ scale: reduce ? 1 : 0.97 }}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-xl border transition flex items-center gap-2 ${
-                isActive
-                  ? "bg-[var(--violet)] text-white border-[var(--violet-soft)] shadow-md"
-                  : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-              }`}
+              onClick={() => setActiveTab("backgrounds")}
+              className="px-4 py-2 rounded-2xl bg-[var(--violet)] text-white text-xs md:text-sm font-semibold shadow-md hover:brightness-110 inline-flex items-center gap-2"
             >
-              <Icon className="w-4 h-4" />
-              {tab.label}
+              <FileText className="w-4 h-4" />
+              Vai ai background
             </motion.button>
-          );
-        })}
+          </div>
+        </div>
+      </header>
+
+      {/* TABS */}
+      <nav className={`${shellCard} p-2`}>
+        <div className="flex flex-wrap gap-2">
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            const Icon = tab.icon;
+            const count = TabCount(tab.id);
+            return (
+              <motion.button
+                key={tab.id}
+                type="button"
+                whileTap={{ scale: reduce ? 1 : 0.985 }}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3.5 py-2 rounded-2xl border transition inline-flex items-center gap-2 text-xs md:text-sm ${
+                  isActive
+                    ? "bg-white/5 border-[var(--violet-soft)] text-white shadow-[0_0_0_1px_rgba(124,92,255,0.25)]"
+                    : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span className="font-semibold">{tab.label}</span>
+                {typeof count === "number" && (
+                  <span
+                    className={`ml-1 px-2 py-0.5 rounded-full border text-[10px] ${
+                      tab.id === "backgrounds"
+                        ? "border-yellow-400/40 text-yellow-300 bg-yellow-400/10"
+                        : "border-[var(--color-border)] text-[var(--color-text-muted)] bg-black/20"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
+              </motion.button>
+            );
+          })}
+        </div>
       </nav>
 
+      {/* LOADING */}
       {loadingData && isAdmin && (
-        <p className="text-xs text-[var(--color-text-muted)]">
+        <div
+          className={`${softPanel} px-4 py-3 text-xs text-[var(--color-text-muted)]`}
+        >
           Caricamento dati admin…
-        </p>
+        </div>
       )}
 
       <AnimatePresence mode="wait">
+        {/* OVERVIEW */}
         {!loadingData && isAdmin && activeTab === "overview" && (
           <motion.section key="overview" {...pageAnim} className="space-y-6">
+            {/* KPI */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: "Utenti registrati", value: stats.totalUsers },
-                { label: "Background inviati", value: stats.totalBackgrounds },
                 {
-                  label: "BG in attesa",
+                  label: "Utenti registrati",
+                  value: stats.totalUsers,
+                  icon: UsersIcon,
+                  hint: "Totale profili",
+                },
+                {
+                  label: "Background inviati",
+                  value: stats.totalBackgrounds,
+                  icon: FileText,
+                  hint: "Totale record",
+                },
+                {
+                  label: "In attesa revisione",
                   value: stats.pendingBackgrounds,
+                  icon: BadgeCheck,
+                  hint: "Da processare",
                   extra: "text-yellow-300",
                 },
                 {
-                  label: "BG approvati / rifiutati",
+                  label: "Approvati / Rifiutati",
                   value: `${stats.approvedBackgrounds} / ${stats.rejectedBackgrounds}`,
+                  icon: Activity,
+                  hint: "Storico",
                 },
-              ].map((c, idx) => (
-                <motion.div
-                  key={idx}
-                  whileHover={{ y: reduce ? 0 : -2 }}
-                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 flex flex-col gap-2"
-                >
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    {c.label}
-                  </p>
-                  <p className={`text-2xl font-semibold ${c.extra ?? ""}`}>
-                    {c.value}
-                  </p>
-                </motion.div>
-              ))}
+              ].map((c, idx) => {
+                const Icon = c.icon;
+                return (
+                  <motion.div
+                    key={idx}
+                    whileHover={{ y: reduce ? 0 : -2 }}
+                    className={`${shellCard} p-4`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                          {c.label}
+                        </p>
+                        <p
+                          className={`mt-1 text-2xl font-semibold ${
+                            c.extra ?? ""
+                          }`}
+                        >
+                          {c.value}
+                        </p>
+                        <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                          {c.hint}
+                        </p>
+                      </div>
+                      <div className="h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-black/20 grid place-items-center">
+                        <Icon className="w-5 h-5 text-[var(--color-text-muted)]" />
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
 
+            {/* LISTE OVERVIEW */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Ultimi iscritti */}
               <div className="lg:col-span-5 xl:col-span-4">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+                <div className={`${shellCard} p-4 space-y-3`}>
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm md:text-base font-semibold">
                       Ultimi iscritti
@@ -432,40 +564,53 @@ export default function AdminDashboard() {
                     </span>
                   </div>
 
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto">
-                    {overviewUsers.map((user) => (
-                      <motion.div
-                        key={user.id}
-                        whileHover={{ y: reduce ? 0 : -1 }}
-                        className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm flex flex-col gap-1"
+                  <div className="space-y-2 max-h-[240px] overflow-y-auto">
+                    {overviewUsers.map((u) => (
+                      <div
+                        key={u.id}
+                        className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium truncate">
-                            {user.discordName}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
-                              user.bgStatus === "none" ? "none" : user.bgStatus
-                            )}`}
-                          >
-                            {user.bgStatus === "none"
-                              ? "Nessun BG"
-                              : user.bgStatus === "pending"
-                              ? "BG in attesa"
-                              : user.bgStatus === "approved"
-                              ? "BG approvato"
-                              : "BG rifiutato"}
-                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs md:text-sm font-semibold truncate">
+                              {u.discordName}
+                            </p>
+                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                              Iscritto il{" "}
+                              {new Date(u.joinedAt).toLocaleString("it-IT", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
+                                u.bgStatus === "none" ? "none" : u.bgStatus
+                              )}`}
+                            >
+                              {u.bgStatus === "none"
+                                ? "Nessun BG"
+                                : u.bgStatus === "pending"
+                                ? "In attesa"
+                                : u.bgStatus === "approved"
+                                ? "Approvato"
+                                : "Rifiutato"}
+                            </span>
+
+                            <span
+                              className={`px-2.5 py-1 rounded-full border text-[10px] ${rolePill(
+                                roleLabel(u)
+                              )}`}
+                            >
+                              {roleLabel(u)}
+                            </span>
+                          </div>
                         </div>
-                        <p className="text-[10px] text-[var(--color-text-muted)]">
-                          Iscritto il{" "}
-                          {new Date(user.joinedAt).toLocaleString("it-IT", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </p>
-                      </motion.div>
+                      </div>
                     ))}
+
                     {overviewUsers.length === 0 && (
                       <p className="text-xs text-[var(--color-text-muted)]">
                         Nessun utente registrato.
@@ -480,7 +625,7 @@ export default function AdminDashboard() {
                         setOverviewUsersPage((p) => Math.max(1, p - 1))
                       }
                       disabled={overviewUsersPage === 1}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Prev
                     </button>
@@ -495,7 +640,7 @@ export default function AdminDashboard() {
                         )
                       }
                       disabled={overviewUsersPage === overviewUsersTotalPages}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Next
                     </button>
@@ -505,7 +650,7 @@ export default function AdminDashboard() {
 
               {/* Log attività */}
               <div className="lg:col-span-7 xl:col-span-8">
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+                <div className={`${shellCard} p-4 space-y-3`}>
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm md:text-base font-semibold">
                       Log attività
@@ -519,29 +664,29 @@ export default function AdminDashboard() {
                     </span>
                   </div>
 
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto text-xs md:text-sm">
-                    {overviewLogs.map((log) => (
-                      <motion.div
-                        key={log.id}
-                        whileHover={{ y: reduce ? 0 : -1 }}
-                        className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
+                  <div className="space-y-2 max-h-[240px] overflow-y-auto">
+                    {overviewLogs.map((l) => (
+                      <div
+                        key={l.id}
+                        className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
                       >
-                        <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center justify-between gap-2">
                           <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                            {log.type}
+                            {l.type}
                           </span>
                           <span className="text-[10px] text-[var(--color-text-muted)]">
-                            {new Date(log.createdAt).toLocaleString("it-IT", {
+                            {new Date(l.createdAt).toLocaleString("it-IT", {
                               dateStyle: "short",
                               timeStyle: "short",
                             })}
                           </span>
                         </div>
-                        <p className="text-[var(--color-text)] text-xs md:text-sm">
-                          {log.message}
+                        <p className="mt-1 text-xs md:text-sm text-[var(--color-text)]">
+                          {l.message}
                         </p>
-                      </motion.div>
+                      </div>
                     ))}
+
                     {overviewLogs.length === 0 && (
                       <p className="text-xs text-[var(--color-text-muted)]">
                         Nessun log disponibile.
@@ -556,7 +701,7 @@ export default function AdminDashboard() {
                         setOverviewLogsPage((p) => Math.max(1, p - 1))
                       }
                       disabled={overviewLogsPage === 1}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Prev
                     </button>
@@ -571,7 +716,7 @@ export default function AdminDashboard() {
                         )
                       }
                       disabled={overviewLogsPage === overviewLogsTotalPages}
-                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                      className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                     >
                       Next
                     </button>
@@ -582,114 +727,139 @@ export default function AdminDashboard() {
           </motion.section>
         )}
 
+        {/* BACKGROUNDS */}
         {activeTab === "backgrounds" && (
           <motion.section key="backgrounds" {...pageAnim} className="space-y-4">
-            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Coda background
-            </h2>
-            <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-              Gestisci i background inviati dai giocatori.
-            </p>
+            <div className={`${shellCard} p-4 md:p-5`}>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    Coda background
+                  </h2>
+                  <p className="mt-1 text-xs md:text-sm text-[var(--color-text-muted)]">
+                    Gestisci i background inviati dai giocatori.
+                  </p>
+                </div>
+
+                {!isAdmin && (
+                  <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs">
+                    <div className="flex items-start gap-2">
+                      <UserCog className="w-4 h-4 mt-0.5 text-amber-300" />
+                      <div>
+                        <p className="font-semibold text-amber-200">
+                          Permessi limitati
+                        </p>
+                        <p className="text-[11px] text-amber-200/80">
+                          Come moderatore puoi solo approvare o rifiutare.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <BackgroundQueue />
           </motion.section>
         )}
 
+        {/* USERS */}
         {isAdmin && activeTab === "users" && (
           <motion.section key="users" {...pageAnim} className="space-y-4">
-            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-              <UsersIcon className="w-5 h-5" />
-              Utenti registrati
-            </h2>
-
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
-              <div className="flex items-center justify-between">
+            <div className={`${shellCard} p-4 md:p-5 space-y-3`}>
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
+                <div>
+                  <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                    <UsersIcon className="w-5 h-5" />
+                    Utenti registrati
+                  </h2>
+                  <p className="text-xs md:text-sm text-[var(--color-text-muted)]">
+                    Gestione ruoli: User / Mod / Admin.
+                  </p>
+                </div>
                 <span className="text-xs text-[var(--color-text-muted)]">
                   {buildRangeLabel(users.length, usersPage, PAGE_SIZE_FULL)}
                 </span>
-                <span className="text-[11px] text-[var(--color-text-muted)]">
-                  Imposta ruolo: User / Mod / Admin.
-                </span>
               </div>
 
-              <div className="space-y-2 max-h-[420px] overflow-y-auto">
-                {paginatedUsers.map((user) => {
-                  const isUpdating = updatingRoleIds.includes(user.id);
-                  const isSelf = user.id === profile.id;
-                  const currentRole = user.isAdmin
-                    ? "Admin"
-                    : user.isModerator
-                    ? "Mod"
-                    : "User";
+              <div className="space-y-2 max-h-[520px] overflow-y-auto">
+                {paginatedUsers.map((u) => {
+                  const isUpdating = updatingRoleIds.includes(u.id);
+                  const isSelf = u.id === profile.id;
+                  const currentRole = roleLabel(u);
 
                   return (
-                    <motion.div
-                      key={user.id}
-                      whileHover={{ y: reduce ? 0 : -1 }}
-                      className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm flex flex-col gap-1"
+                    <div
+                      key={u.id}
+                      className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium truncate">
-                          {user.discordName}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
-                            user.bgStatus === "none" ? "none" : user.bgStatus
-                          )}`}
-                        >
-                          {user.bgStatus === "none"
-                            ? "Nessun BG"
-                            : user.bgStatus === "pending"
-                            ? "BG in attesa"
-                            : user.bgStatus === "approved"
-                            ? "BG approvato"
-                            : "BG rifiutato"}
-                        </span>
-                      </div>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold truncate">
+                            {u.discordName}
+                          </p>
+                          <p className="text-[11px] text-[var(--color-text-muted)]">
+                            Iscritto il{" "}
+                            {new Date(u.joinedAt).toLocaleString("it-IT", {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })}
+                          </p>
+                        </div>
 
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] text-[var(--color-text-muted)]">
-                          Iscritto il{" "}
-                          {new Date(user.joinedAt).toLocaleString("it-IT", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </p>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] px-2 py-1 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`px-2.5 py-1 rounded-full border text-[10px] ${rolePill(
+                              currentRole
+                            )}`}
+                          >
                             {currentRole}
                           </span>
 
+                          <span
+                            className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
+                              u.bgStatus === "none" ? "none" : u.bgStatus
+                            )}`}
+                          >
+                            {u.bgStatus === "none"
+                              ? "Nessun BG"
+                              : u.bgStatus === "pending"
+                              ? "In attesa"
+                              : u.bgStatus === "approved"
+                              ? "Approvato"
+                              : "Rifiutato"}
+                          </span>
+
+                          <div className="h-6 w-px bg-[var(--color-border)] mx-1 hidden md:block" />
+
                           <button
                             type="button"
                             disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(user.id, "User")}
-                            className="text-[10px] px-2 py-1 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] disabled:opacity-40 hover:bg-white/5"
+                            onClick={() => setUserRole(u.id, "User")}
+                            className="text-[10px] px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] disabled:opacity-40 hover:bg-white/5"
                           >
                             User
                           </button>
-
                           <button
                             type="button"
                             disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(user.id, "Mod")}
-                            className="text-[10px] px-2 py-1 rounded-full border border-amber-400 text-amber-300 disabled:opacity-40 hover:bg-white/5"
+                            onClick={() => setUserRole(u.id, "Mod")}
+                            className="text-[10px] px-3 py-1.5 rounded-full border border-amber-400/60 text-amber-300 disabled:opacity-40 hover:bg-white/5"
                           >
                             Mod
                           </button>
-
                           <button
                             type="button"
                             disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(user.id, "Admin")}
-                            className="text-[10px] px-2 py-1 rounded-full border border-[var(--violet-soft)] text-[var(--color-accent-cool)] disabled:opacity-40 hover:bg-white/5"
+                            onClick={() => setUserRole(u.id, "Admin")}
+                            className="text-[10px] px-3 py-1.5 rounded-full border border-[var(--violet-soft)] text-[var(--color-accent-cool)] disabled:opacity-40 hover:bg-white/5"
                           >
                             Admin
                           </button>
                         </div>
                       </div>
-                    </motion.div>
+                    </div>
                   );
                 })}
               </div>
@@ -699,7 +869,7 @@ export default function AdminDashboard() {
                   type="button"
                   onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
                   disabled={usersPage === 1}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Prev
                 </button>
@@ -712,7 +882,7 @@ export default function AdminDashboard() {
                     setUsersPage((p) => Math.min(usersTotalPages, p + 1))
                   }
                   disabled={usersPage === usersTotalPages}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Next
                 </button>
@@ -721,45 +891,46 @@ export default function AdminDashboard() {
           </motion.section>
         )}
 
+        {/* LOGS */}
         {isAdmin && activeTab === "logs" && (
           <motion.section key="logs" {...pageAnim} className="space-y-4">
-            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-              <Activity className="w-5 h-5" />
-              Log attività
-            </h2>
-
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
-              <div className="flex items-center justify-between">
+            <div className={`${shellCard} p-4 md:p-5 space-y-3`}>
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
+                <div>
+                  <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                    <Activity className="w-5 h-5" />
+                    Log attività
+                  </h2>
+                  <p className="text-xs md:text-sm text-[var(--color-text-muted)]">
+                    Eventi dalla tabella <code>logs</code>.
+                  </p>
+                </div>
                 <span className="text-xs text-[var(--color-text-muted)]">
                   {buildRangeLabel(logs.length, logsPage, PAGE_SIZE_FULL)}
                 </span>
-                <span className="text-[11px] text-[var(--color-text-muted)]">
-                  Dati da tabella <code>logs</code>
-                </span>
               </div>
 
-              <div className="space-y-2 max-h-[420px] overflow-y-auto text-xs md:text-sm">
-                {paginatedLogs.map((log) => (
-                  <motion.div
-                    key={log.id}
-                    whileHover={{ y: reduce ? 0 : -1 }}
-                    className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
+              <div className="space-y-2 max-h-[520px] overflow-y-auto">
+                {paginatedLogs.map((l) => (
+                  <div
+                    key={l.id}
+                    className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                        {log.type}
+                        {l.type}
                       </span>
                       <span className="text-[10px] text-[var(--color-text-muted)]">
-                        {new Date(log.createdAt).toLocaleString("it-IT", {
+                        {new Date(l.createdAt).toLocaleString("it-IT", {
                           dateStyle: "short",
                           timeStyle: "short",
                         })}
                       </span>
                     </div>
-                    <p className="text-[var(--color-text)] text-xs md:text-sm">
-                      {log.message}
+                    <p className="mt-1 text-xs md:text-sm text-[var(--color-text)]">
+                      {l.message}
                     </p>
-                  </motion.div>
+                  </div>
                 ))}
               </div>
 
@@ -768,7 +939,7 @@ export default function AdminDashboard() {
                   type="button"
                   onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
                   disabled={logsPage === 1}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Prev
                 </button>
@@ -781,7 +952,7 @@ export default function AdminDashboard() {
                     setLogsPage((p) => Math.min(logsTotalPages, p + 1))
                   }
                   disabled={logsPage === logsTotalPages}
-                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                  className="px-3 py-1.5 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
                   Next
                 </button>

@@ -29,6 +29,7 @@ const statusPill = (status) =>
 
 export default function CharacterDashboard() {
   const { profile, loading, session } = useAuth();
+
   const [characters, setCharacters] = useState([]);
   const [activeCharacterId, setActiveCharacterId] = useState(null);
   const [loadingChars, setLoadingChars] = useState(true);
@@ -46,6 +47,20 @@ export default function CharacterDashboard() {
 
   const shellCard =
     "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
+
+  // ✅ useMemo DEVE stare prima di qualsiasi return
+  const totals = useMemo(() => {
+    const totalApproved = characters.filter(
+      (c) => c.status === "approved"
+    ).length;
+    const totalPending = characters.filter(
+      (c) => c.status === "pending"
+    ).length;
+    const totalRejected = characters.filter(
+      (c) => c.status === "rejected"
+    ).length;
+    return { totalApproved, totalPending, totalRejected };
+  }, [characters]);
 
   useEffect(() => {
     const loadCharacters = async () => {
@@ -65,9 +80,7 @@ export default function CharacterDashboard() {
         }
 
         setCharacters(data || []);
-        if (!activeCharacterId && data && data.length > 0) {
-          setActiveCharacterId(data[0].id);
-        }
+        setActiveCharacterId((prev) => prev ?? data?.[0]?.id ?? null);
       } catch (err) {
         console.error("Error loading characters", err);
         await alertError("Errore", "Errore imprevisto nel caricamento dati.");
@@ -77,9 +90,9 @@ export default function CharacterDashboard() {
     };
 
     if (profile) loadCharacters();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
+  // ✅ adesso i return condizionali sono OK (hook già chiamati sopra)
   if (loading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
@@ -110,23 +123,9 @@ export default function CharacterDashboard() {
 
   const isApproved = activeCharacter?.status === "approved";
 
-  const totals = useMemo(() => {
-    const totalApproved = characters.filter(
-      (c) => c.status === "approved"
-    ).length;
-    const totalPending = characters.filter(
-      (c) => c.status === "pending"
-    ).length;
-    const totalRejected = characters.filter(
-      (c) => c.status === "rejected"
-    ).length;
-    return { totalApproved, totalPending, totalRejected };
-  }, [characters]);
-
   const startEditUser = async () => {
     if (!activeCharacter) return;
 
-    // ✅ BLOCCO TOTALE: se approvato non si modifica più
     if (activeCharacter.status === "approved") {
       await alertWarning(
         "Non modificabile",
@@ -170,7 +169,6 @@ export default function CharacterDashboard() {
   const saveEditUser = async () => {
     if (!activeCharacter) return;
 
-    // ✅ BLOCCO TOTALE: sicurezza UI
     if (activeCharacter.status === "approved") {
       await alertWarning(
         "Non modificabile",
@@ -302,29 +300,11 @@ export default function CharacterDashboard() {
                 timeStyle: "short",
               })} • Ultimo aggiornamento ${new Date(
       activeCharacter.updated_at
-    ).toLocaleString("it-IT", {
-      dateStyle: "short",
-      timeStyle: "short",
-    })}</p>
+    ).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</p>
             </div>
             <div class="tag">Stato BG: ${
               STATUS_LABELS[activeCharacter.status] ?? ""
             }</div>
-          </div>
-
-          <div class="section">
-            <h2>I. Dati anagrafici</h2>
-            <p><strong>Nome:</strong> ${activeCharacter.nome ?? ""} ${
-      activeCharacter.cognome ?? ""
-    }</p>
-            <p><strong>Sesso:</strong> ${activeCharacter.sesso || "-"}</p>
-            <p><strong>Stato di nascita:</strong> ${
-              activeCharacter.stato_nascita || "-"
-            }</p>
-            <p><strong>Etnia:</strong> ${activeCharacter.etnia || "-"}</p>
-            <p><strong>Data di nascita:</strong> ${
-              activeCharacter.data_nascita || "-"
-            }</p>
           </div>
 
           <div class="section">
@@ -355,7 +335,6 @@ export default function CharacterDashboard() {
 
   return (
     <section className="space-y-6">
-      {/* HEADER UTENTE */}
       <header className={`${shellCard} p-5 md:p-6 space-y-4`}>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -426,7 +405,6 @@ export default function CharacterDashboard() {
         </p>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* SIDEBAR */}
           <aside className="lg:col-span-4 xl:col-span-3">
             <div className={`${shellCard} p-3 space-y-3`}>
               <div className="flex items-center justify-between">
@@ -499,11 +477,9 @@ export default function CharacterDashboard() {
             </div>
           </aside>
 
-          {/* DETTAGLIO */}
           <main className="lg:col-span-8 xl:col-span-9">
             {activeCharacter ? (
               <div className={`${shellCard} p-4 md:p-5 space-y-5`}>
-                {/* header PG */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
@@ -512,24 +488,6 @@ export default function CharacterDashboard() {
                     <h2 className="text-lg md:text-xl font-semibold truncate">
                       {activeCharacter.nome} {activeCharacter.cognome}
                     </h2>
-                    <p className="text-[11px] text-[var(--color-text-muted)]">
-                      BG creato il{" "}
-                      {new Date(activeCharacter.created_at).toLocaleString(
-                        "it-IT",
-                        {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        }
-                      )}
-                      , ultimo aggiornamento{" "}
-                      {new Date(activeCharacter.updated_at).toLocaleString(
-                        "it-IT",
-                        {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        }
-                      )}
-                    </p>
                   </div>
 
                   <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)]">
@@ -547,7 +505,6 @@ export default function CharacterDashboard() {
                   </div>
                 </div>
 
-                {/* ✅ Banner lock */}
                 {isApproved && (
                   <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm">
                     <div className="flex items-start gap-2">
@@ -564,7 +521,6 @@ export default function CharacterDashboard() {
                   </div>
                 )}
 
-                {/* sezioni BG */}
                 <div className="space-y-4 text-xs md:text-sm">
                   <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-3">
                     <h3 className="font-semibold text-sm md:text-base flex items-center gap-2">
@@ -597,7 +553,6 @@ export default function CharacterDashboard() {
                   </section>
                 </div>
 
-                {/* footer azioni utente */}
                 <div className="pt-3 border-t border-[var(--color-border)] flex flex-wrap gap-2 text-xs md:text-sm">
                   {!editModeUser ? (
                     <>
