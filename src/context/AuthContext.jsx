@@ -10,38 +10,20 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true;
+    let alive = true;
 
     const fetchProfile = async (user) => {
-      if (!user || !isMounted) return;
+      if (!user || !alive) return;
 
-      console.log("[Auth] user:", user);
+      const meta = user.user_metadata || {};
 
-      // 1) provo a leggere il profilo
+      // ✅ usa UPSERT: elimina conflitti e “profilo creato in parallelo”
       const { data, error } = await supabase
         .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error("[Auth] Error fetching profile", error);
-        return;
-      }
-
-      // 2) se NON esiste profilo → lo CREO
-      if (!data) {
-        console.log("[Auth] Nessun profilo, creo nuovo profilo…");
-
-        const meta = user.user_metadata || {};
-        console.log("[Auth] user_metadata:", meta);
-
-        const { data: inserted, error: insertError } = await supabase
-          .from("profiles")
-          .insert({
-            id: user.id, // deve matchare auth.users.id
-            discord_id:
-              meta.sub ?? meta.provider_id ?? meta.provider_id ?? null,
+        .upsert(
+          {
+            id: user.id,
+            discord_id: meta.sub ?? meta.provider_id ?? null,
             discord_username:
               meta.custom_claims?.global_name ??
               meta.global_name ??
@@ -50,115 +32,52 @@ export function AuthProvider({ children }) {
               meta.user_name ??
               user.email,
             avatar_url: meta.avatar_url ?? meta.picture ?? null,
-          })
-          .select("*")
-          .single();
-
-        if (insertError) {
-          // se dovesse capitare un conflitto (profilo creato in parallelo)
-          if (insertError.code === "23505") {
-            console.warn(
-              "[Auth] Profilo già creato da un'altra richiesta, rileggo…"
-            );
-            const { data: again, error: againError } = await supabase
-              .from("profiles")
-              .select("*")
-              .eq("id", user.id)
-              .single();
-
-            if (againError) {
-              console.error(
-                "[Auth] Error refetching profile after conflict",
-                againError
-              );
-              return;
-            }
-
-            if (!isMounted) return;
-            setProfile(again);
-            return;
-          }
-
-          console.error("[Auth] Error creating profile", insertError);
-          return;
-        }
-
-        console.log("[Auth] Profilo creato:", inserted);
-        if (!isMounted) return;
-        setProfile(inserted);
-        return;
-      }
-
-      // 3) profilo ESISTE → aggiorno last_login_at (opzionale)
-      const { data: updated, error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          last_login_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
+            last_login_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        )
         .select("*")
         .single();
 
-      if (updateError) {
-        console.error("[Auth] Error updating profile", updateError);
-        if (!isMounted) return;
-        setProfile(data); // fallback versione vecchia
-      } else {
-        if (!isMounted) return;
-        setProfile(updated);
-      }
-    };
+      if (!alive) return;
 
-    const init = async () => {
-      try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-
-        console.log("[Auth] getSession →", session, error);
-        if (!isMounted) return;
-
-        setSession(session);
-
-        if (session?.user) {
-          await fetchProfile(session.user);
-        }
-      } catch (err) {
-        console.error("[Auth] getSession exception", err);
-      } finally {
-        if (isMounted) {
-          console.log("[Auth] init: setLoading(false)");
-          setLoading(false);
-        }
-      }
-    };
-
-    init();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("[Auth] onAuthStateChange:", event, session);
-
-      if (!isMounted) return;
-
-      // gestiamo SEMPRE gli eventi, anche INITIAL_SESSION
-      setSession(session);
-
-      if (session?.user) {
-        await fetchProfile(session.user);
-      } else {
+      if (error) {
+        console.error("[Auth] profile upsert error:", error);
+        // NON ammazzare la sessione se fallisce il profilo
         setProfile(null);
+        return;
       }
 
-      // qualunque cosa succeda, dopo il primo evento auth smetti di "caricare"
+      setProfile(data);
+    };
+
+    // 1) Prendi sessione iniziale UNA VOLTA
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!alive) return;
+      if (error) console.error("[Auth] getSession error:", error);
+
+      setSession(data.session ?? null);
+      if (data.session?.user) fetchProfile(data.session.user);
       setLoading(false);
     });
 
+    // 2) Listener: unica fonte successiva
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!alive) return;
+      console.log("[Auth] event:", event);
+
+      setSession(session ?? null);
+
+      if (session?.user) {
+        fetchProfile(session.user);
+      } else {
+        setProfile(null);
+      }
+    });
+
     return () => {
-      isMounted = false;
-      subscription.unsubscribe();
+      alive = false;
+      sub.subscription.unsubscribe();
     };
   }, []);
 

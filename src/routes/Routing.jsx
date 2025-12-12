@@ -8,6 +8,7 @@ import CharacterDashboard from "../pages/CharacterDashboard";
 import BackgroundForm from "../pages/BackgroundForm";
 import BackgroundQueue from "../pages/admin/BackgroundQueue";
 import AdminDashboard from "../pages/admin/AdminDashboard";
+import Staff from "../pages/Staff";
 
 export default function Routing() {
   return (
@@ -18,6 +19,7 @@ export default function Routing() {
         <Route path="/regolamento" element={<Rules />} />
         <Route path="/dashboard" element={<CharacterDashboard />} />
         <Route path="/background" element={<BackgroundForm />} />
+        <Route path="/staff" element={<Staff />} />
         {/* admin ONLY */}
         <Route path="/admin" element={<AdminDashboard />} />
         {/* se vuoi route diretta solo coda BG */}

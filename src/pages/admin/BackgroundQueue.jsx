@@ -1,7 +1,24 @@
 // src/pages/admin/BackgroundQueue.jsx
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import {
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  Pencil,
+  Save,
+  Ban,
+} from "lucide-react";
+
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import {
+  alertError,
+  alertInfo,
+  alertWarning,
+  confirmAction,
+  toast,
+} from "../../lib/alerts";
 
 const STATUS_LABELS = {
   pending: "In attesa",
@@ -17,8 +34,10 @@ const STATUS_COLORS = {
 
 export default function BackgroundQueue() {
   const { profile, loading } = useAuth();
+  const reduce = useReducedMotion();
+
   const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState("all"); // all | pending | approved | rejected
+  const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(null);
   const [rejectionDraft, setRejectionDraft] = useState("");
   const [loadingData, setLoadingData] = useState(true);
@@ -70,6 +89,7 @@ export default function BackgroundQueue() {
 
       if (error) {
         console.error("Error fetching backgrounds", error);
+        await alertError("Errore", "Impossibile caricare la coda background.");
         return;
       }
 
@@ -100,12 +120,12 @@ export default function BackgroundQueue() {
         })) ?? [];
 
       setItems(mapped);
-      if (!mapped.find((i) => i.id === selectedId)) {
+      if (!mapped.find((i) => i.id === selectedId))
         setSelectedId(mapped[0]?.id ?? null);
-      }
       setEditMode(false);
     } catch (err) {
       console.error("Error loading backgrounds", err);
+      await alertError("Errore", "Errore imprevisto nel caricamento dati.");
     } finally {
       setLoadingData(false);
     }
@@ -138,12 +158,15 @@ export default function BackgroundQueue() {
       });
     } catch (err) {
       console.error("Error writing log", err);
+      // log non deve rompere la UI: toast leggero
+      toast("error", "Impossibile scrivere nei log");
     }
   };
 
   const updateStatus = async (id, status, reason = "") => {
     if (!canModerate) return;
     setUpdating(true);
+
     try {
       const payload = {
         status,
@@ -171,8 +194,11 @@ export default function BackgroundQueue() {
         .single();
 
       if (error) {
-        console.error("Error updating background status", error);
-        alert("Errore durante l'aggiornamento dello status.");
+        console.error(error);
+        await alertError(
+          "Errore",
+          "Errore durante l'aggiornamento dello stato."
+        );
         return;
       }
 
@@ -208,32 +234,75 @@ export default function BackgroundQueue() {
           discord_id: data.profiles?.discord_id ?? null,
         },
       });
+
+      toast(
+        "success",
+        status === "approved" ? "Background approvato" : "Background rifiutato"
+      );
     } catch (err) {
-      console.error("Error updating background status", err);
-      alert("Errore generico durante l'aggiornamento dello status.");
+      console.error(err);
+      await alertError(
+        "Errore",
+        "Errore generico durante l'aggiornamento dello status."
+      );
     } finally {
       setUpdating(false);
     }
   };
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (!selected) return;
-    updateStatus(selected.id, "approved");
+
+    const ok = await confirmAction({
+      title: "Approvare il background?",
+      text: `Stai per approvare il background di ${selected.nome} ${selected.cognome}.`,
+      confirmText: "Sì, approva",
+      cancelText: "Annulla",
+      icon: "question",
+    });
+
+    if (!ok) return;
+
+    await updateStatus(selected.id, "approved");
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!selected) return;
+
     if (!rejectionDraft.trim()) {
-      alert("Inserisci una motivazione per il rifiuto.");
+      await alertWarning(
+        "Motivazione mancante",
+        "Inserisci una motivazione per il rifiuto."
+      );
       return;
     }
-    updateStatus(selected.id, "rejected", rejectionDraft.trim());
+
+    const ok = await confirmAction({
+      title: "Rifiutare il background?",
+      text: `Stai per rifiutare il background di ${selected.nome} ${selected.cognome}.`,
+      confirmText: "Sì, rifiuta",
+      cancelText: "Annulla",
+    });
+
+    if (!ok) return;
+
+    await updateStatus(selected.id, "rejected", rejectionDraft.trim());
     setRejectionDraft("");
   };
 
-  // ---- EDIT MODE (solo admin) ----
-  const startEdit = () => {
+  const startEdit = async () => {
     if (!selected || !isAdmin) return;
+
+    const ok = await confirmAction({
+      title: "Modificare il background?",
+      text: "Entrerai in modalità modifica. Ricordati di salvare le modifiche.",
+      confirmText: "Ok, modifica",
+      cancelText: "Annulla",
+      icon: "info",
+    });
+
+    if (!ok) return;
+
     setEditDraft({
       storiaBreve: selected.data.storiaBreve || "",
       condannePenali: selected.data.condannePenali || "",
@@ -243,13 +312,34 @@ export default function BackgroundQueue() {
     setEditMode(true);
   };
 
-  const cancelEdit = () => {
+  const cancelEdit = async () => {
+    const ok = await confirmAction({
+      title: "Annullare le modifiche?",
+      text: "Le modifiche non salvate andranno perse.",
+      confirmText: "Sì, annulla",
+      cancelText: "Torna indietro",
+    });
+
+    if (!ok) return;
+
     setEditMode(false);
   };
 
   const saveEdit = async () => {
     if (!selected || !isAdmin) return;
+
+    const ok = await confirmAction({
+      title: "Salvare le modifiche?",
+      text: "Le modifiche verranno salvate nel background.",
+      confirmText: "Sì, salva",
+      cancelText: "Annulla",
+      icon: "question",
+    });
+
+    if (!ok) return;
+
     setUpdating(true);
+
     try {
       const { data, error } = await supabase
         .from("characters")
@@ -265,8 +355,8 @@ export default function BackgroundQueue() {
         .single();
 
       if (error) {
-        console.error("Error saving BG edit", error);
-        alert("Errore durante il salvataggio delle modifiche.");
+        console.error(error);
+        await alertError("Errore", "Errore durante il salvataggio.");
         return;
       }
 
@@ -291,19 +381,23 @@ export default function BackgroundQueue() {
       await writeLog({
         type: "BG_EDITED_ADMIN",
         message: `Background modificato da admin per ${data.nome} ${data.cognome}.`,
-        meta: {
-          character_id: data.id,
-          admin_id: profile?.id ?? null,
-        },
+        meta: { character_id: data.id, admin_id: profile?.id ?? null },
       });
 
       setEditMode(false);
+      toast("success", "Modifiche salvate");
     } catch (err) {
-      console.error("Error saving BG edit", err);
-      alert("Errore generico durante il salvataggio.");
+      console.error(err);
+      await alertError("Errore", "Errore generico durante il salvataggio.");
     } finally {
       setUpdating(false);
     }
+  };
+
+  const cardAnim = {
+    initial: { opacity: 0, y: reduce ? 0 : 8 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.2 } },
+    exit: { opacity: 0, y: reduce ? 0 : -6, transition: { duration: 0.15 } },
   };
 
   if (loading) {
@@ -329,9 +423,7 @@ export default function BackgroundQueue() {
           Moderazione background
         </h2>
         <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-          Coda dei background (tabella <code>characters</code>). Admin e
-          moderatori possono approvare/rifiutare; solo gli admin possono
-          modificare il testo del BG.
+          Coda dei background (tabella <code>characters</code>).
         </p>
       </header>
 
@@ -341,10 +433,9 @@ export default function BackgroundQueue() {
         </p>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Lista BG */}
+          {/* Lista */}
           <aside className="lg:col-span-5 xl:col-span-4">
             <div className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/80 backdrop-blur p-3 space-y-3">
-              {/* Filtri */}
               <div className="flex flex-wrap gap-2 text-xs">
                 {[
                   { id: "all", label: "Tutti" },
@@ -352,9 +443,10 @@ export default function BackgroundQueue() {
                   { id: "approved", label: "Approvati" },
                   { id: "rejected", label: "Rifiutati" },
                 ].map((f) => (
-                  <button
+                  <motion.button
                     key={f.id}
                     type="button"
+                    whileTap={{ scale: reduce ? 1 : 0.97 }}
                     onClick={() => {
                       setFilter(f.id);
                       setEditMode(false);
@@ -366,60 +458,70 @@ export default function BackgroundQueue() {
                     }`}
                   >
                     {f.label}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
                 <span>{filtered.length} background trovati</span>
-                <button
+                <motion.button
                   type="button"
+                  whileTap={{ scale: reduce ? 1 : 0.97 }}
                   onClick={loadBackgrounds}
-                  className="px-2 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5"
+                  className="px-2 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5 inline-flex items-center gap-2"
                 >
+                  <RefreshCw className="w-3.5 h-3.5" />
                   Aggiorna
-                </button>
+                </motion.button>
               </div>
 
               <div className="max-h-[520px] overflow-y-auto space-y-2 pt-1">
-                {filtered.map((item) => {
-                  const isActive = selected?.id === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelect(item.id)}
-                      className={`w-full text-left rounded-xl border px-3 py-3 text-xs md:text-sm transition flex flex-col gap-1 ${
-                        isActive
-                          ? "border-[var(--blue)] bg-[var(--color-surface)]"
-                          : "border-[var(--color-border)] bg-black/20 hover:bg-white/5"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium truncate">
-                          {item.nome} {item.cognome}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full border text-[10px] ${
-                            STATUS_COLORS[item.status]
-                          }`}
-                        >
-                          {STATUS_LABELS[item.status]}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--color-text-muted)]">
-                        <span className="truncate">{item.discordName}</span>
-                        <span>
-                          Inviato:{" "}
-                          {new Date(item.submittedAt).toLocaleString("it-IT", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
+                <AnimatePresence initial={false}>
+                  {filtered.map((item) => {
+                    const isActive = selected?.id === item.id;
+                    return (
+                      <motion.button
+                        key={item.id}
+                        type="button"
+                        layout
+                        {...cardAnim}
+                        whileHover={{ y: reduce ? 0 : -1 }}
+                        onClick={() => handleSelect(item.id)}
+                        className={`w-full text-left rounded-xl border px-3 py-3 text-xs md:text-sm transition flex flex-col gap-1 ${
+                          isActive
+                            ? "border-[var(--blue)] bg-[var(--color-surface)]"
+                            : "border-[var(--color-border)] bg-black/20 hover:bg-white/5"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium truncate">
+                            {item.nome} {item.cognome}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full border text-[10px] ${
+                              STATUS_COLORS[item.status]
+                            }`}
+                          >
+                            {STATUS_LABELS[item.status]}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--color-text-muted)]">
+                          <span className="truncate">{item.discordName}</span>
+                          <span>
+                            Inviato:{" "}
+                            {new Date(item.submittedAt).toLocaleString(
+                              "it-IT",
+                              {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              }
+                            )}
+                          </span>
+                        </div>
+                      </motion.button>
+                    );
+                  })}
+                </AnimatePresence>
 
                 {filtered.length === 0 && (
                   <p className="text-xs text-[var(--color-text-muted)]">
@@ -430,329 +532,184 @@ export default function BackgroundQueue() {
             </div>
           </aside>
 
-          {/* Dettaglio BG selezionato */}
+          {/* Dettaglio */}
           <main className="lg:col-span-7 xl:col-span-8">
-            {selected ? (
-              <div className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/90 backdrop-blur p-4 md:p-5 space-y-4">
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                      Background
-                    </p>
-                    <h2 className="text-lg md:text-xl font-semibold">
-                      {selected.nome} {selected.cognome}
-                    </h2>
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      {selected.discordName} • ID: {selected.discordId}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)]">
-                    <span
-                      className={`px-3 py-1 rounded-full border text-[10px] ${
-                        STATUS_COLORS[selected.status]
-                      }`}
-                    >
-                      {STATUS_LABELS[selected.status]}
-                    </span>
-                    <span>
-                      Inviato:{" "}
-                      {new Date(selected.submittedAt).toLocaleString("it-IT", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </span>
-                    <span>
-                      Ultimo aggiornamento:{" "}
-                      {new Date(selected.lastUpdatedAt).toLocaleString(
-                        "it-IT",
-                        {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        }
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Sezioni BG */}
-                <div className="space-y-4 text-xs md:text-sm">
-                  {/* Dati anagrafici */}
-                  <section className="rounded-xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-1">
-                    <h3 className="font-semibold text-sm md:text-base">
-                      I. Dati anagrafici
-                    </h3>
-                    <p className="text-[var(--color-text-muted)]">
-                      <span className="font-medium text-[var(--color-text)]">
-                        Nome:
-                      </span>{" "}
-                      {selected.nome} {selected.cognome}
-                    </p>
-                    <p className="text-[var(--color-text-muted)]">
-                      <span className="font-medium text-[var(--color-text)]">
-                        Sesso:
-                      </span>{" "}
-                      {selected.data.sesso || "-"}
-                    </p>
-                    <p className="text-[var(--color-text-muted)]">
-                      <span className="font-medium text-[var(--color-text)]">
-                        Stato di nascita:
-                      </span>{" "}
-                      {selected.data.statoNascita || "-"}
-                    </p>
-                    <p className="text-[var(--color-text-muted)]">
-                      <span className="font-medium text-[var(--color-text)]">
-                        Etnia:
-                      </span>{" "}
-                      {selected.data.etnia || "-"}
-                    </p>
-                    <p className="text-[var(--color-text-muted)]">
-                      <span className="font-medium text-[var(--color-text)]">
-                        Data di nascita:
-                      </span>{" "}
-                      {selected.data.dataNascita || "-"}
-                    </p>
-                  </section>
-
-                  {/* Storia */}
-                  <section className="rounded-xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
-                    <h3 className="font-semibold text-sm md:text-base">
-                      II. Storia del personaggio
-                    </h3>
+            <AnimatePresence mode="wait">
+              {selected ? (
+                <motion.div
+                  key={selected.id}
+                  initial={{ opacity: 0, y: reduce ? 0 : 10 }}
+                  animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
+                  exit={{
+                    opacity: 0,
+                    y: reduce ? 0 : -8,
+                    transition: { duration: 0.15 },
+                  }}
+                  className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/90 backdrop-blur p-4 md:p-5 space-y-4"
+                >
+                  {/* Header */}
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                      <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                        Storia in breve
+                      <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                        Background
                       </p>
-                      {editMode ? (
+                      <h2 className="text-lg md:text-xl font-semibold">
+                        {selected.nome} {selected.cognome}
+                      </h2>
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        {selected.discordName} • ID: {selected.discordId}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)]">
+                      <span
+                        className={`px-3 py-1 rounded-full border text-[10px] ${
+                          STATUS_COLORS[selected.status]
+                        }`}
+                      >
+                        {STATUS_LABELS[selected.status]}
+                      </span>
+                      <span>
+                        Inviato:{" "}
+                        {new Date(selected.submittedAt).toLocaleString(
+                          "it-IT",
+                          {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          }
+                        )}
+                      </span>
+                      <span>
+                        Ultimo aggiornamento:{" "}
+                        {new Date(selected.lastUpdatedAt).toLocaleString(
+                          "it-IT",
+                          {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          }
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sezioni (qui lascia pure le tue) */}
+                  <div className="space-y-4 text-xs md:text-sm">
+                    <section className="rounded-xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
+                      <h3 className="font-semibold text-sm md:text-base">
+                        II. Storia del personaggio
+                      </h3>
+
+                      <div>
+                        <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
+                          Storia in breve
+                        </p>
+                        {editMode ? (
+                          <textarea
+                            className="w-full min-h-[90px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
+                            value={editDraft.storiaBreve}
+                            onChange={(e) =>
+                              setEditDraft((prev) => ({
+                                ...prev,
+                                storiaBreve: e.target.value,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <p className="text-[var(--color-text)] whitespace-pre-line">
+                            {selected.data.storiaBreve || "-"}
+                          </p>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+
+                  {/* Azioni */}
+                  <div className="mt-4 border-t border-[var(--color-border)] pt-4 space-y-3">
+                    {!editMode && (
+                      <>
                         <textarea
                           className="w-full min-h-[90px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
-                          value={editDraft.storiaBreve}
-                          onChange={(e) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              storiaBreve: e.target.value,
-                            }))
-                          }
+                          placeholder="Motivazione del rifiuto..."
+                          value={rejectionDraft}
+                          onChange={(e) => setRejectionDraft(e.target.value)}
                         />
-                      ) : (
-                        <p className="text-[var(--color-text)] whitespace-pre-line">
-                          {selected.data.storiaBreve || "-"}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                        Condanne penali
-                      </p>
-                      {editMode ? (
-                        <textarea
-                          className="w-full min-h-[70px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
-                          value={editDraft.condannePenali}
-                          onChange={(e) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              condannePenali: e.target.value,
-                            }))
-                          }
-                        />
-                      ) : (
-                        <p className="text-[var(--color-text)] whitespace-pre-line">
-                          {selected.data.condannePenali || "-"}
-                        </p>
-                      )}
-                    </div>
 
-                    <div className="grid md:grid-cols-2 gap-3 mt-2">
-                      <div>
-                        <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                          Patologie
-                        </p>
-                        {selected.data.patologie?.length ? (
-                          <ul className="list-disc list-inside text-[var(--color-text)]">
-                            {selected.data.patologie.map((p, i) => (
-                              <li key={i}>
-                                {p.nome}{" "}
-                                {p.inCura && (
-                                  <span className="text-[10px] text-[var(--blue)]">
-                                    (in cura)
-                                  </span>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-[var(--color-text-muted)]">
-                            Nessuna.
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                          Dipendenze
-                        </p>
-                        {selected.data.dipendenze?.length ? (
-                          <ul className="list-disc list-inside text-[var(--color-text)]">
-                            {selected.data.dipendenze.map((d, i) => (
-                              <li key={i}>
-                                {d.nome}{" "}
-                                {d.inCura && (
-                                  <span className="text-[10px] text-[var(--blue)]">
-                                    (in cura)
-                                  </span>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-[var(--color-text-muted)]">
-                            Nessuna.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </section>
+                        <div className="flex flex-wrap gap-2 text-xs md:text-sm">
+                          <motion.button
+                            type="button"
+                            whileTap={{ scale: reduce ? 1 : 0.97 }}
+                            onClick={handleApprove}
+                            disabled={updating}
+                            className="px-4 py-2 rounded-full font-semibold bg-emerald-500/90 text-[#050816] shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            Approva
+                          </motion.button>
 
-                  {/* Caratteristiche */}
-                  <section className="rounded-xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
-                    <h3 className="font-semibold text-sm md:text-base">
-                      III. Caratteristiche del personaggio
-                    </h3>
-                    <div>
-                      <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                        Segni distintivi
-                      </p>
-                      {editMode ? (
-                        <textarea
-                          className="w-full min-h-[70px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
-                          value={editDraft.segniDistintivi}
-                          onChange={(e) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              segniDistintivi: e.target.value,
-                            }))
-                          }
-                        />
-                      ) : (
-                        <p className="text-[var(--color-text)] whitespace-pre-line">
-                          {selected.data.segniDistintivi || "-"}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                        Aspetti caratteriali
-                      </p>
-                      {editMode ? (
-                        <textarea
-                          className="w-full min-h-[70px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
-                          value={editDraft.aspettiCaratteriali}
-                          onChange={(e) =>
-                            setEditDraft((prev) => ({
-                              ...prev,
-                              aspettiCaratteriali: e.target.value,
-                            }))
-                          }
-                        />
-                      ) : (
-                        <p className="text-[var(--color-text)] whitespace-pre-line">
-                          {selected.data.aspettiCaratteriali || "-"}
-                        </p>
-                      )}
-                    </div>
-                  </section>
-                </div>
+                          <motion.button
+                            type="button"
+                            whileTap={{ scale: reduce ? 1 : 0.97 }}
+                            onClick={handleReject}
+                            disabled={updating}
+                            className="px-4 py-2 rounded-full font-semibold bg-red-500/90 text-white shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
+                          >
+                            <XCircle className="w-4 h-4" />
+                            Rifiuta
+                          </motion.button>
 
-                {/* Zona esito / motivazione */}
-                <div className="mt-4 border-t border-[var(--color-border)] pt-4 space-y-3">
-                  <h3 className="text-sm font-semibold">
-                    Esito e motivazioni (solo staff)
-                  </h3>
-
-                  {selected.status === "rejected" &&
-                    selected.rejectionReason &&
-                    !editMode && (
-                      <div className="text-xs text-red-300 border border-red-500/40 bg-red-500/10 rounded-xl p-3">
-                        <p className="font-semibold mb-1">
-                          Motivazione rifiuto salvata:
-                        </p>
-                        <p className="whitespace-pre-line">
-                          {selected.rejectionReason}
-                        </p>
-                      </div>
+                          {isAdmin && (
+                            <motion.button
+                              type="button"
+                              whileTap={{ scale: reduce ? 1 : 0.97 }}
+                              onClick={startEdit}
+                              disabled={updating}
+                              className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 inline-flex items-center gap-2"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              Modifica BG
+                            </motion.button>
+                          )}
+                        </div>
+                      </>
                     )}
 
-                  {!editMode && (
-                    <>
-                      <textarea
-                        className="w-full min-h-[90px] rounded-xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y"
-                        placeholder="Motivazione del rifiuto (visibile al player su Discord e nello storico esiti staff)..."
-                        value={rejectionDraft}
-                        onChange={(e) => setRejectionDraft(e.target.value)}
-                      />
-
+                    {editMode && (
                       <div className="flex flex-wrap gap-2 text-xs md:text-sm">
-                        <button
+                        <motion.button
                           type="button"
-                          onClick={handleApprove}
+                          whileTap={{ scale: reduce ? 1 : 0.97 }}
+                          onClick={saveEdit}
                           disabled={updating}
-                          className="px-4 py-2 rounded-full font-semibold bg-emerald-500/90 text-[#050816] shadow-md hover:brightness-110 active:scale-95 disabled:opacity-50"
+                          className="px-4 py-2 rounded-full font-semibold bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
                         >
-                          Approva
-                        </button>
-                        <button
+                          <Save className="w-4 h-4" />
+                          Salva modifiche
+                        </motion.button>
+
+                        <motion.button
                           type="button"
-                          onClick={handleReject}
+                          whileTap={{ scale: reduce ? 1 : 0.97 }}
+                          onClick={cancelEdit}
                           disabled={updating}
-                          className="px-4 py-2 rounded-full font-semibold bg-red-500/90 text-white shadow-md hover:brightness-110 active:scale-95 disabled:opacity-50"
+                          className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 disabled:opacity-50 inline-flex items-center gap-2"
                         >
-                          Rifiuta
-                        </button>
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            onClick={startEdit}
-                            disabled={updating}
-                            className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-                          >
-                            Modifica BG
-                          </button>
-                        )}
+                          <Ban className="w-4 h-4" />
+                          Annulla
+                        </motion.button>
                       </div>
-                    </>
-                  )}
-
-                  {editMode && (
-                    <div className="flex flex-wrap gap-2 text-xs md:text-sm">
-                      <button
-                        type="button"
-                        onClick={saveEdit}
-                        disabled={updating}
-                        className="px-4 py-2 rounded-full font-semibold bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 active:scale-95 disabled:opacity-50"
-                      >
-                        Salva modifiche
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEdit}
-                        disabled={updating}
-                        className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-                      >
-                        Annulla
-                      </button>
-                    </div>
-                  )}
-
-                  <p className="text-[10px] text-[var(--color-text-muted)]">
-                    I moderatori possono solo approvare o rifiutare i BG. La
-                    modifica dei testi è riservata agli admin.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                Nessun background selezionato.
-              </p>
-            )}
+                    )}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.p
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-sm text-[var(--color-text-muted)]"
+                >
+                  Nessun background selezionato.
+                </motion.p>
+              )}
+            </AnimatePresence>
           </main>
         </div>
       )}

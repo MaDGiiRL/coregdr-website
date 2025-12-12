@@ -2,12 +2,107 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
-import Swal from "sweetalert2"; // ✅
+import Swal from "sweetalert2";
 
-const MAX_STORIA = 5000;
-const MAX_CONDANNE = 300;
+// ✅ ZOD
+import { z } from "zod";
 
-// campi che consideriamo "importanti"
+export const MAX_STORIA = 5000;
+export const MAX_CONDANNE = 300;
+
+export const ListItemSchema = z.object({
+  id: z.number(),
+  nome: z
+    .string()
+    .trim()
+    .max(120, "Massimo 120 caratteri")
+    .optional()
+    .or(z.literal("")),
+  inCura: z.boolean(),
+});
+
+export const BackgroundSchema = z
+  .object({
+    nome: z
+      .string()
+      .trim()
+      .min(1, "Nome obbligatorio")
+      .max(60, "Max 60 caratteri"),
+    cognome: z
+      .string()
+      .trim()
+      .min(1, "Cognome obbligatorio")
+      .max(60, "Max 60 caratteri"),
+    sesso: z.enum(["M", "F", "Altro"], {
+      message: "Seleziona un sesso valido",
+    }),
+
+    statoNascita: z
+      .string()
+      .trim()
+      .max(60, "Max 60 caratteri")
+      .optional()
+      .or(z.literal("")),
+    etnia: z
+      .string()
+      .trim()
+      .max(60, "Max 60 caratteri")
+      .optional()
+      .or(z.literal("")),
+    dataNascita: z.string().trim().optional().or(z.literal("")),
+
+    storiaBreve: z
+      .string()
+      .trim()
+      .max(MAX_STORIA, `Massimo ${MAX_STORIA} caratteri`)
+      .optional()
+      .or(z.literal("")),
+    condannePenali: z
+      .string()
+      .trim()
+      .max(MAX_CONDANNE, `Massimo ${MAX_CONDANNE} caratteri`)
+      .optional()
+      .or(z.literal("")),
+
+    patologie: z.array(ListItemSchema).default([]),
+    dipendenze: z.array(ListItemSchema).default([]),
+
+    segniDistintivi: z
+      .string()
+      .trim()
+      .max(500, "Max 500 caratteri")
+      .optional()
+      .or(z.literal("")),
+    aspettiCaratteriali: z
+      .string()
+      .trim()
+      .max(1000, "Max 1000 caratteri")
+      .optional()
+      .or(z.literal("")),
+  })
+  // pulizia array: tengo solo item con nome valorizzato
+  .transform((v) => ({
+    ...v,
+    patologie: (v.patologie ?? []).filter((p) => (p.nome ?? "").trim() !== ""),
+    dipendenze: (v.dipendenze ?? []).filter(
+      (d) => (d.nome ?? "").trim() !== ""
+    ),
+  }))
+  // valida data YYYY-MM-DD se presente
+  .superRefine((v, ctx) => {
+    if (v.dataNascita && v.dataNascita.trim() !== "") {
+      const ok = /^\d{4}-\d{2}-\d{2}$/.test(v.dataNascita);
+      if (!ok) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["dataNascita"],
+          message: "Formato data non valido (usa YYYY-MM-DD)",
+        });
+      }
+    }
+  });
+
+// campi che consideriamo "importanti" (per alert “invia comunque”)
 const REQUIRED_FIELDS = [
   { key: "nome", label: "Nome" },
   { key: "cognome", label: "Cognome" },
@@ -73,7 +168,6 @@ export default function BackgroundForm() {
     e.preventDefault();
     setSubmitStatus(null);
 
-    // 🔹 Auth in caricamento
     if (loading) {
       await Swal.fire({
         icon: "info",
@@ -83,7 +177,6 @@ export default function BackgroundForm() {
       return;
     }
 
-    // 🔹 Non loggato
     if (!session || !profile) {
       setSubmitStatus("error");
       await Swal.fire({
@@ -94,13 +187,29 @@ export default function BackgroundForm() {
       return;
     }
 
-    // 🔹 controlla i campi "importanti" vuoti
+    // ✅ ZOD VALIDATION
+    const parsed = BackgroundSchema.safeParse(form);
+
+    if (!parsed.success) {
+      const errors = parsed.error.issues
+        .map((i) => `• ${i.message}`)
+        .join("<br/>");
+
+      setSubmitStatus("error");
+      await Swal.fire({
+        icon: "error",
+        title: "Dati non validi",
+        html: errors,
+      });
+      return;
+    }
+
+    // (rimane il tuo alert “invia comunque” sui campi importanti)
     const missing = REQUIRED_FIELDS.filter((f) => {
-      const value = form[f.key];
+      const value = parsed.data[f.key];
       return !value || (typeof value === "string" && value.trim() === "");
     }).map((f) => f.label);
 
-    // se ci sono campi mancanti, chiedi conferma con SweetAlert
     if (missing.length > 0) {
       const result = await Swal.fire({
         icon: "warning",
@@ -118,39 +227,28 @@ export default function BackgroundForm() {
         focusCancel: true,
       });
 
-      if (!result.isConfirmed) {
-        // utente annulla → non inviamo
-        return;
-      }
+      if (!result.isConfirmed) return;
     }
 
-    // 🔹 Invio
     setIsSubmitting(true);
 
     try {
-      // pulizia arrays
-      const patologieClean = form.patologie
-        .filter((p) => p.nome.trim() !== "")
-        .map(({ id, ...rest }) => rest);
-
-      const dipendenzeClean = form.dipendenze
-        .filter((d) => d.nome.trim() !== "")
-        .map(({ id, ...rest }) => rest);
+      const v = parsed.data; // ✅ già “pulito” da transform()
 
       const payload = {
         user_id: profile.id,
-        nome: form.nome,
-        cognome: form.cognome,
-        sesso: form.sesso,
-        stato_nascita: form.statoNascita,
-        etnia: form.etnia,
-        data_nascita: form.dataNascita || null,
-        storia_breve: form.storiaBreve,
-        condanne_penali: form.condannePenali,
-        patologie: patologieClean,
-        dipendenze: dipendenzeClean,
-        segni_distintivi: form.segniDistintivi,
-        aspetti_caratteriali: form.aspettiCaratteriali,
+        nome: v.nome,
+        cognome: v.cognome,
+        sesso: v.sesso,
+        stato_nascita: v.statoNascita || null,
+        etnia: v.etnia || null,
+        data_nascita: v.dataNascita || null,
+        storia_breve: v.storiaBreve || null,
+        condanne_penali: v.condannePenali || null,
+        patologie: v.patologie,
+        dipendenze: v.dipendenze,
+        segni_distintivi: v.segniDistintivi || null,
+        aspetti_caratteriali: v.aspettiCaratteriali || null,
         status: "pending",
         rejection_reason: null,
       };
@@ -171,16 +269,15 @@ export default function BackgroundForm() {
             </p>
           `,
         });
-      } else {
-        setSubmitStatus("ok");
-        await Swal.fire({
-          icon: "success",
-          title: "Background inviato!",
-          text: "Il tuo background è stato inviato allo staff per la revisione.",
-        });
-        // opzionale: reset del form
-        // setForm({ ... });
+        return;
       }
+
+      setSubmitStatus("ok");
+      await Swal.fire({
+        icon: "success",
+        title: "Background inviato!",
+        text: "Il tuo background è stato inviato allo staff per la revisione.",
+      });
     } catch (err) {
       console.error("Errore BG:", err);
       setSubmitStatus("error");
@@ -194,7 +291,6 @@ export default function BackgroundForm() {
     }
   };
 
-  // 🔹 Se Auth sta ancora caricando lo stato iniziale
   if (loading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
@@ -203,7 +299,6 @@ export default function BackgroundForm() {
     );
   }
 
-  // 🔹 Quando loading è false ma non ho session/profile → non loggata
   if (!session || !profile) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
@@ -212,7 +307,6 @@ export default function BackgroundForm() {
     );
   }
 
-  // 🔹 Se arrivo qui: sono loggata e ho il profilo → mostro il form
   return (
     <section className="space-y-8">
       <header className="space-y-3">
@@ -226,7 +320,6 @@ export default function BackgroundForm() {
       </header>
 
       <form onSubmit={handleSubmit} className="space-y-8 max-w-4xl">
-        {/* DISCORD INFO */}
         <div className="rounded-2xl border p-4 flex items-center justify-between">
           <div>
             <p className="text-xs uppercase text-[var(--color-text-muted)]">
@@ -241,7 +334,6 @@ export default function BackgroundForm() {
           </span>
         </div>
 
-        {/* DATI ANAGRAFICI */}
         <section className="space-y-4">
           <h2 className="text-lg font-semibold">I. Dati anagrafici</h2>
 
@@ -289,7 +381,6 @@ export default function BackgroundForm() {
           </div>
         </section>
 
-        {/* STORIA */}
         <section className="space-y-4">
           <h2 className="text-lg font-semibold">II. Storia del personaggio</h2>
 
@@ -307,7 +398,6 @@ export default function BackgroundForm() {
             onChange={(v) => handleChange("condannePenali", v)}
           />
 
-          {/* PATOLGIE */}
           <DynamicList
             title="Patologie"
             items={form.patologie}
@@ -318,7 +408,6 @@ export default function BackgroundForm() {
             }
           />
 
-          {/* DIPENDENZE */}
           <DynamicList
             title="Dipendenze"
             items={form.dipendenze}
@@ -330,7 +419,6 @@ export default function BackgroundForm() {
           />
         </section>
 
-        {/* CARATTERISTICHE */}
         <section className="space-y-4">
           <h2 className="text-lg font-semibold">III. Caratteristiche</h2>
 
@@ -347,7 +435,6 @@ export default function BackgroundForm() {
           />
         </section>
 
-        {/* SUBMIT */}
         <div className="flex gap-3 items-center">
           <button
             type="submit"

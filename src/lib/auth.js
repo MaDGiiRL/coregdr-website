@@ -20,14 +20,10 @@ export async function signInWithDiscord() {
 export async function signOut() {
     console.log("[Auth] signOut chiamato");
 
-    // 🔹 In supabase-js v2 è consigliato passare scope, soprattutto se hai più tab
-    const { error } = await supabase.auth.signOut({
-        scope: "global", // "local" se vuoi solo questa tab
-    });
-
+    const { error } = await supabase.auth.signOut(); // ✅ semplice
     if (error) {
         console.error("[Auth] Logout error:", error);
-        throw error; // lo gestiamo nel caller
+        throw error;
     }
 
     console.log("[Auth] signOut completato");

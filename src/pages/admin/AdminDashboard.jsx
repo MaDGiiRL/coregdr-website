@@ -1,8 +1,24 @@
 // src/pages/admin/AdminDashboard.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import {
+  LayoutDashboard,
+  FileText,
+  Users as UsersIcon,
+  Activity,
+  Shield,
+} from "lucide-react";
+
 import BackgroundQueue from "./BackgroundQueue";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
+import {
+  alertError,
+  alertInfo,
+  alertWarning,
+  confirmAction,
+  toast,
+} from "../../lib/alerts";
 
 const PAGE_SIZE_OVERVIEW = 10;
 const PAGE_SIZE_FULL = 30;
@@ -20,19 +36,24 @@ const statusPill = (status) => {
   }
 };
 
-const TABS = [
-  { id: "overview", label: "Panoramica" },
-  { id: "backgrounds", label: "Background" },
-  { id: "users", label: "Utenti" },
-  { id: "logs", label: "Log" },
-];
-
 export default function AdminDashboard() {
   const { profile, loading: authLoading } = useAuth();
 
   const isAdmin = !!profile?.is_admin;
   const isMod = !!profile?.is_moderator;
   const isStaff = isAdmin || isMod;
+
+  const reduce = useReducedMotion();
+
+  const TABS = useMemo(
+    () => [
+      { id: "overview", label: "Panoramica", icon: LayoutDashboard },
+      { id: "backgrounds", label: "Background", icon: FileText },
+      { id: "users", label: "Utenti", icon: UsersIcon },
+      { id: "logs", label: "Log", icon: Activity },
+    ],
+    []
+  );
 
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -44,17 +65,15 @@ export default function AdminDashboard() {
     rejectedBackgrounds: 0,
   });
 
-  const [users, setUsers] = useState([]); // { id, discordName, joinedAt, bgStatus, isModerator }
-  const [logs, setLogs] = useState([]); // { id, type, message, createdAt }
+  const [users, setUsers] = useState([]);
+  const [logs, setLogs] = useState([]);
 
   const [loadingData, setLoadingData] = useState(true);
   const [updatingRoleIds, setUpdatingRoleIds] = useState([]);
 
-  // paginazione overview (10 per pagina)
   const [overviewUsersPage, setOverviewUsersPage] = useState(1);
   const [overviewLogsPage, setOverviewLogsPage] = useState(1);
 
-  // paginazione tab dedicati (30 per pagina)
   const [usersPage, setUsersPage] = useState(1);
   const [logsPage, setLogsPage] = useState(1);
 
@@ -70,19 +89,14 @@ export default function AdminDashboard() {
     return `${start}–${end} di ${total}`;
   };
 
-  // TABS visibili in base al ruolo
   const visibleTabs = isAdmin
     ? TABS
     : TABS.filter((t) => t.id === "backgrounds");
 
-  // Se non sei admin, forza sempre la tab "backgrounds"
   useEffect(() => {
-    if (!isAdmin && activeTab !== "backgrounds") {
-      setActiveTab("backgrounds");
-    }
+    if (!isAdmin && activeTab !== "backgrounds") setActiveTab("backgrounds");
   }, [isAdmin, activeTab]);
 
-  // FETCH DATI DA SUPABASE (solo admin: mod non ha bisogno di stats/users/logs)
   useEffect(() => {
     if (!profile) return;
 
@@ -93,9 +107,7 @@ export default function AdminDashboard() {
 
     const fetchData = async () => {
       setLoadingData(true);
-
       try {
-        // STATISTICHE (contatori)
         const [
           usersCountRes,
           totalBgRes,
@@ -129,61 +141,60 @@ export default function AdminDashboard() {
           rejectedBackgrounds: rejectedBgRes.count ?? 0,
         });
 
-        // ULTIMI UTENTI
         const { data: usersData, error: usersError } = await supabase
           .from("profiles")
           .select("id, discord_username, created_at, is_moderator")
           .order("created_at", { ascending: false });
 
         if (usersError) {
-          console.error("Error fetching users", usersError);
+          console.error(usersError);
+          await alertError("Errore", "Impossibile caricare la lista utenti.");
         } else {
-          // prendo tutti i BG e calcolo lo status BG più recente per ogni user
-          const { data: charsData, error: charsError } = await supabase
+          const { data: charsData, error: charsErr } = await supabase
             .from("characters")
             .select("id, user_id, status, created_at")
             .order("created_at", { ascending: false });
 
-          if (charsError) {
-            console.error("Error fetching characters for bgStatus", charsError);
-          }
+          if (charsErr) console.error(charsErr);
 
           const latestBgByUser = new Map();
           (charsData || []).forEach((ch) => {
-            if (!latestBgByUser.has(ch.user_id)) {
+            if (!latestBgByUser.has(ch.user_id))
               latestBgByUser.set(ch.user_id, ch.status);
-            }
           });
 
-          const mapped = (usersData || []).map((u) => ({
-            id: u.id,
-            discordName: u.discord_username ?? "Senza nome",
-            joinedAt: u.created_at,
-            bgStatus: latestBgByUser.get(u.id) ?? "none",
-            isModerator: !!u.is_moderator,
-          }));
-          setUsers(mapped);
+          setUsers(
+            (usersData || []).map((u) => ({
+              id: u.id,
+              discordName: u.discord_username ?? "Senza nome",
+              joinedAt: u.created_at,
+              bgStatus: latestBgByUser.get(u.id) ?? "none",
+              isModerator: !!u.is_moderator,
+            }))
+          );
         }
 
-        // LOG ATTIVITÀ
         const { data: logsData, error: logsError } = await supabase
           .from("logs")
           .select("id, type, message, created_at")
           .order("created_at", { ascending: false });
 
         if (logsError) {
-          console.error("Error fetching logs", logsError);
+          console.error(logsError);
+          await alertError("Errore", "Impossibile caricare i log.");
         } else {
-          const mappedLogs = (logsData || []).map((l) => ({
-            id: l.id,
-            type: l.type ?? "GENERIC",
-            message: l.message ?? "",
-            createdAt: l.created_at,
-          }));
-          setLogs(mappedLogs);
+          setLogs(
+            (logsData || []).map((l) => ({
+              id: l.id,
+              type: l.type ?? "GENERIC",
+              message: l.message ?? "",
+              createdAt: l.created_at,
+            }))
+          );
         }
       } catch (err) {
         console.error("Error loading admin data", err);
+        await alertError("Errore", "Errore imprevisto nel caricamento dati.");
       } finally {
         setLoadingData(false);
       }
@@ -200,7 +211,6 @@ export default function AdminDashboard() {
     1,
     Math.ceil(logs.length / PAGE_SIZE_OVERVIEW)
   );
-
   const usersTotalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE_FULL));
   const logsTotalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE_FULL));
 
@@ -211,14 +221,30 @@ export default function AdminDashboard() {
 
   const toggleModerator = async (userId, currentValue) => {
     if (!isAdmin) return;
+
     if (userId === profile.id) {
-      alert("Non puoi modificare il tuo stesso ruolo da qui.");
+      await alertWarning(
+        "Operazione non consentita",
+        "Non puoi modificare il tuo stesso ruolo da qui."
+      );
       return;
     }
 
     const newValue = !currentValue;
 
+    const ok = await confirmAction({
+      title: newValue ? "Promuovere a moderatore?" : "Rimuovere moderatore?",
+      text: newValue
+        ? "L'utente avrà accesso alla moderazione dei background."
+        : "L'utente perderà i permessi da moderatore.",
+      confirmText: newValue ? "Sì, promuovi" : "Sì, rimuovi",
+      cancelText: "Annulla",
+    });
+
+    if (!ok) return;
+
     setUpdatingRoleIds((prev) => [...prev, userId]);
+
     try {
       const { error } = await supabase
         .from("profiles")
@@ -226,8 +252,8 @@ export default function AdminDashboard() {
         .eq("id", userId);
 
       if (error) {
-        console.error("Error updating moderator role", error);
-        alert("Errore durante l'aggiornamento del ruolo.");
+        console.error(error);
+        await alertError("Errore", "Errore durante l'aggiornamento del ruolo.");
         return;
       }
 
@@ -246,14 +272,25 @@ export default function AdminDashboard() {
           is_moderator: newValue,
         }),
       });
+
+      toast(
+        "success",
+        newValue ? "Utente promosso a mod" : "Ruolo moderatore rimosso"
+      );
     } catch (err) {
       console.error("Error updating moderator role", err);
+      await alertError("Errore", "Errore imprevisto durante l'operazione.");
     } finally {
       setUpdatingRoleIds((prev) => prev.filter((id) => id !== userId));
     }
   };
 
-  // PROTEZIONE STAFF
+  const pageAnim = {
+    initial: { opacity: 0, y: reduce ? 0 : 10 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.25 } },
+    exit: { opacity: 0, y: reduce ? 0 : -8, transition: { duration: 0.18 } },
+  };
+
   if (authLoading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">Caricamento…</p>
@@ -278,11 +315,14 @@ export default function AdminDashboard() {
 
   return (
     <section className="space-y-6">
-      {/* HEADER */}
       <header className="space-y-3">
-        <h1 className="text-2xl md:text-3xl font-semibold">
-          {isAdmin ? "Admin dashboard" : "Area moderazione"}
-        </h1>
+        <div className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-[var(--color-text-muted)]" />
+          <h1 className="text-2xl md:text-3xl font-semibold">
+            {isAdmin ? "Admin dashboard" : "Area moderazione"}
+          </h1>
+        </div>
+
         <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-3xl">
           {isAdmin
             ? "Panoramica su background, iscritti e attività del server. Accesso riservato allo staff admin."
@@ -290,23 +330,25 @@ export default function AdminDashboard() {
         </p>
       </header>
 
-      {/* TAB NAV (i mod vedono solo la tab Background) */}
       <nav className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)]/80 backdrop-blur px-3 py-2 flex flex-wrap gap-2 text-xs md:text-sm">
         {visibleTabs.map((tab) => {
           const isActive = activeTab === tab.id;
+          const Icon = tab.icon;
           return (
-            <button
+            <motion.button
               key={tab.id}
               type="button"
+              whileTap={{ scale: reduce ? 1 : 0.97 }}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-xl border transition ${
+              className={`px-3 py-1.5 rounded-xl border transition flex items-center gap-2 ${
                 isActive
                   ? "bg-[var(--violet)] text-white border-[var(--violet-soft)] shadow-md"
                   : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
               }`}
             >
+              <Icon className="w-4 h-4" />
               {tab.label}
-            </button>
+            </motion.button>
           );
         })}
       </nav>
@@ -317,70 +359,243 @@ export default function AdminDashboard() {
         </p>
       )}
 
-      {/* ========== TAB OVERVIEW (solo admin) ========== */}
-      {!loadingData && isAdmin && activeTab === "overview" && (
-        <section className="space-y-6">
-          {/* TOP STATS */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 flex flex-col gap-2">
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Utenti registrati
-              </p>
-              <p className="text-2xl font-semibold">{stats.totalUsers}</p>
+      <AnimatePresence mode="wait">
+        {!loadingData && isAdmin && activeTab === "overview" && (
+          <motion.section key="overview" {...pageAnim} className="space-y-6">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: "Utenti registrati", value: stats.totalUsers },
+                { label: "Background inviati", value: stats.totalBackgrounds },
+                {
+                  label: "BG in attesa",
+                  value: stats.pendingBackgrounds,
+                  extra: "text-yellow-300",
+                },
+                {
+                  label: "BG approvati / rifiutati",
+                  value: `${stats.approvedBackgrounds} / ${stats.rejectedBackgrounds}`,
+                },
+              ].map((c, idx) => (
+                <motion.div
+                  key={idx}
+                  whileHover={{ y: reduce ? 0 : -2 }}
+                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 flex flex-col gap-2"
+                >
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {c.label}
+                  </p>
+                  <p className={`text-2xl font-semibold ${c.extra ?? ""}`}>
+                    {c.value}
+                  </p>
+                </motion.div>
+              ))}
             </div>
 
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 flex flex-col gap-2">
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Background inviati
-              </p>
-              <p className="text-2xl font-semibold">{stats.totalBackgrounds}</p>
-            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Ultimi iscritti */}
+              <div className="lg:col-span-5 xl:col-span-4">
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm md:text-base font-semibold">
+                      Ultimi iscritti
+                    </h2>
+                    <span className="text-[11px] text-[var(--color-text-muted)]">
+                      {buildRangeLabel(
+                        users.length,
+                        overviewUsersPage,
+                        PAGE_SIZE_OVERVIEW
+                      )}
+                    </span>
+                  </div>
 
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 flex flex-col gap-2">
-              <p className="text-xs text-[var(--color-text-muted)]">
-                BG in attesa
-              </p>
-              <p className="text-2xl font-semibold text-yellow-300">
-                {stats.pendingBackgrounds}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 flex flex-col gap-2">
-              <p className="text-xs text-[var(--color-text-muted)]">
-                BG approvati / rifiutati
-              </p>
-              <p className="text-2xl font-semibold">
-                {stats.approvedBackgrounds}
-                <span className="text-sm text-[var(--color-text-muted)]">
-                  {" "}
-                  / {stats.rejectedBackgrounds}
-                </span>
-              </p>
-            </div>
-          </div>
-
-          {/* MINI UTENTI + MINI LOG (10 per pagina) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Ultimi iscritti */}
-            <div className="lg:col-span-5 xl:col-span-4">
-              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm md:text-base font-semibold">
-                    Ultimi iscritti
-                  </h2>
-                  <span className="text-[11px] text-[var(--color-text-muted)]">
-                    {buildRangeLabel(
-                      users.length,
-                      overviewUsersPage,
-                      PAGE_SIZE_OVERVIEW
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto">
+                    {overviewUsers.map((user) => (
+                      <motion.div
+                        key={user.id}
+                        whileHover={{ y: reduce ? 0 : -1 }}
+                        className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm flex flex-col gap-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium truncate">
+                            {user.discordName}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
+                              user.bgStatus === "none" ? "none" : user.bgStatus
+                            )}`}
+                          >
+                            {user.bgStatus === "none"
+                              ? "Nessun BG"
+                              : user.bgStatus === "pending"
+                              ? "BG in attesa"
+                              : user.bgStatus === "approved"
+                              ? "BG approvato"
+                              : "BG rifiutato"}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-[var(--color-text-muted)]">
+                          Iscritto il{" "}
+                          {new Date(user.joinedAt).toLocaleString("it-IT", {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })}
+                        </p>
+                      </motion.div>
+                    ))}
+                    {overviewUsers.length === 0 && (
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        Nessun utente registrato.
+                      </p>
                     )}
-                  </span>
-                </div>
+                  </div>
 
-                <div className="space-y-2 max-h-[220px] overflow-y-auto">
-                  {overviewUsers.map((user) => (
-                    <div
+                  <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverviewUsersPage((p) => Math.max(1, p - 1))
+                      }
+                      disabled={overviewUsersPage === 1}
+                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                    >
+                      Prev
+                    </button>
+                    <span>
+                      Pagina {overviewUsersPage} / {overviewUsersTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverviewUsersPage((p) =>
+                          Math.min(overviewUsersTotalPages, p + 1)
+                        )
+                      }
+                      disabled={overviewUsersPage === overviewUsersTotalPages}
+                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Log attività */}
+              <div className="lg:col-span-7 xl:col-span-8">
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm md:text-base font-semibold">
+                      Log attività
+                    </h2>
+                    <span className="text-[11px] text-[var(--color-text-muted)]">
+                      {buildRangeLabel(
+                        logs.length,
+                        overviewLogsPage,
+                        PAGE_SIZE_OVERVIEW
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto text-xs md:text-sm">
+                    {overviewLogs.map((log) => (
+                      <motion.div
+                        key={log.id}
+                        whileHover={{ y: reduce ? 0 : -1 }}
+                        className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+                            {log.type}
+                          </span>
+                          <span className="text-[10px] text-[var(--color-text-muted)]">
+                            {new Date(log.createdAt).toLocaleString("it-IT", {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-[var(--color-text)] text-xs md:text-sm">
+                          {log.message}
+                        </p>
+                      </motion.div>
+                    ))}
+                    {overviewLogs.length === 0 && (
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        Nessun log disponibile.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverviewLogsPage((p) => Math.max(1, p - 1))
+                      }
+                      disabled={overviewLogsPage === 1}
+                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                    >
+                      Prev
+                    </button>
+                    <span>
+                      Pagina {overviewLogsPage} / {overviewLogsTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOverviewLogsPage((p) =>
+                          Math.min(overviewLogsTotalPages, p + 1)
+                        )
+                      }
+                      disabled={overviewLogsPage === overviewLogsTotalPages}
+                      className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === "backgrounds" && (
+          <motion.section key="backgrounds" {...pageAnim} className="space-y-4">
+            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Coda background
+            </h2>
+            <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
+              Gestisci i background inviati dai giocatori.
+            </p>
+            <BackgroundQueue />
+          </motion.section>
+        )}
+
+        {isAdmin && activeTab === "users" && (
+          <motion.section key="users" {...pageAnim} className="space-y-4">
+            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+              <UsersIcon className="w-5 h-5" />
+              Utenti registrati
+            </h2>
+
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--color-text-muted)]">
+                  {buildRangeLabel(users.length, usersPage, PAGE_SIZE_FULL)}
+                </span>
+                <span className="text-[11px] text-[var(--color-text-muted)]">
+                  Clicca per promuovere/rimuovere moderatori.
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-[420px] overflow-y-auto">
+                {paginatedUsers.map((user) => {
+                  const isUpdating = updatingRoleIds.includes(user.id);
+                  const isSelf = user.id === profile.id;
+                  return (
+                    <motion.div
                       key={user.id}
+                      whileHover={{ y: reduce ? 0 : -1 }}
                       className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm flex flex-col gap-1"
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -401,333 +616,134 @@ export default function AdminDashboard() {
                             : "BG rifiutato"}
                         </span>
                       </div>
-                      <p className="text-[10px] text-[var(--color-text-muted)]">
-                        Iscritto il{" "}
-                        {new Date(user.joinedAt).toLocaleString("it-IT", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                      </p>
-                    </div>
-                  ))}
-                  {overviewUsers.length === 0 && (
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      Nessun utente registrato.
-                    </p>
-                  )}
-                </div>
-
-                {/* Pagination mini utenti */}
-                <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOverviewUsersPage((p) => Math.max(1, p - 1))
-                    }
-                    disabled={overviewUsersPage === 1}
-                    className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg:white/5 hover:bg-white/5"
-                  >
-                    Prev
-                  </button>
-                  <span>
-                    Pagina {overviewUsersPage} / {overviewUsersTotalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOverviewUsersPage((p) =>
-                        Math.min(overviewUsersTotalPages, p + 1)
-                      )
-                    }
-                    disabled={overviewUsersPage === overviewUsersTotalPages}
-                    className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Log attività */}
-            <div className="lg:col-span-7 xl:col-span-8">
-              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm md:text-base font-semibold">
-                    Log attività
-                  </h2>
-                  <span className="text-[11px] text-[var(--color-text-muted)]">
-                    {buildRangeLabel(
-                      logs.length,
-                      overviewLogsPage,
-                      PAGE_SIZE_OVERVIEW
-                    )}
-                  </span>
-                </div>
-
-                <div className="space-y-2 max-h-[220px] overflow-y-auto text-xs md:text-sm">
-                  {overviewLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                          {log.type}
-                        </span>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">
-                          {new Date(log.createdAt).toLocaleString("it-IT", {
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] text-[var(--color-text-muted)]">
+                          Iscritto il{" "}
+                          {new Date(user.joinedAt).toLocaleString("it-IT", {
                             dateStyle: "short",
                             timeStyle: "short",
                           })}
-                        </span>
+                        </p>
+                        <button
+                          type="button"
+                          disabled={isUpdating || isSelf}
+                          onClick={() =>
+                            toggleModerator(user.id, user.isModerator)
+                          }
+                          className={`text-[10px] px-2 py-1 rounded-full border ${
+                            user.isModerator
+                              ? "border-amber-400 text-amber-300"
+                              : "border-[var(--color-border)] text-[var(--color-text-muted)]"
+                          } disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/5`}
+                        >
+                          {isSelf
+                            ? "Tu (admin)"
+                            : user.isModerator
+                            ? "Rimuovi mod"
+                            : "Promuovi a mod"}
+                        </button>
                       </div>
-                      <p className="text-[var(--color-text)] text-xs md:text-sm">
-                        {log.message}
-                      </p>
-                    </div>
-                  ))}
-                  {overviewLogs.length === 0 && (
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      Nessun log disponibile.
-                    </p>
-                  )}
-                </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
 
-                {/* Pagination mini log */}
-                <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOverviewLogsPage((p) => Math.max(1, p - 1))
-                    }
-                    disabled={overviewLogsPage === 1}
-                    className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
-                  >
-                    Prev
-                  </button>
-                  <span>
-                    Pagina {overviewLogsPage} / {overviewLogsTotalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOverviewLogsPage((p) =>
-                        Math.min(overviewLogsTotalPages, p + 1)
-                      )
-                    }
-                    disabled={overviewLogsPage === overviewLogsTotalPages}
-                    className="px-2 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg:white/5 hover:bg-white/5"
-                  >
-                    Next
-                  </button>
-                </div>
+              <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
+                <button
+                  type="button"
+                  onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
+                  disabled={usersPage === 1}
+                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                >
+                  Prev
+                </button>
+                <span>
+                  Pagina {usersPage} / {usersTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setUsersPage((p) => Math.min(usersTotalPages, p + 1))
+                  }
+                  disabled={usersPage === usersTotalPages}
+                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                >
+                  Next
+                </button>
               </div>
             </div>
-          </div>
-        </section>
-      )}
+          </motion.section>
+        )}
 
-      {/* ========== TAB BACKGROUNDS (admin + mod) ========== */}
-      {activeTab === "backgrounds" && (
-        <section className="space-y-4">
-          <h2 className="text-lg md:text-xl font-semibold">Coda background</h2>
-          <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-            Gestisci i background inviati dai giocatori. I moderatori possono
-            solo approvare/rifiutare, gli admin possono anche modificare il
-            testo e gestire gli altri dati admin.
-          </p>
-          <BackgroundQueue />
-        </section>
-      )}
+        {isAdmin && activeTab === "logs" && (
+          <motion.section key="logs" {...pageAnim} className="space-y-4">
+            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Log attività
+            </h2>
 
-      {/* ========== TAB USERS (solo admin) ========== */}
-      {isAdmin && activeTab === "users" && (
-        <section className="space-y-4">
-          <h2 className="text-lg md:text-xl font-semibold">
-            Utenti registrati
-          </h2>
-          <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-            Elenco degli utenti registrati al sito tramite Discord, stato del
-            loro background e ruolo staff. Da qui puoi promuovere o rimuovere
-            moderatori (i mod possono solo approvare/rifiutare BG).
-          </p>
+            <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--color-text-muted)]">
+                  {buildRangeLabel(logs.length, logsPage, PAGE_SIZE_FULL)}
+                </span>
+                <span className="text-[11px] text-[var(--color-text-muted)]">
+                  Dati da tabella <code>logs</code>
+                </span>
+              </div>
 
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-[var(--color-text-muted)]">
-                {buildRangeLabel(users.length, usersPage, PAGE_SIZE_FULL)}
-              </span>
-              <span className="text-[11px] text-[var(--color-text-muted)]">
-                Clicca sul pulsante per promuovere/rimuovere moderatori.
-              </span>
-            </div>
-
-            <div className="space-y-2 max-h-[420px] overflow-y-auto">
-              {paginatedUsers.map((user) => {
-                const isUpdating = updatingRoleIds.includes(user.id);
-                const isSelf = user.id === profile.id;
-                return (
-                  <div
-                    key={user.id}
-                    className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2 text-xs md:text-sm flex flex-col gap-1"
+              <div className="space-y-2 max-h-[420px] overflow-y-auto text-xs md:text-sm">
+                {paginatedLogs.map((log) => (
+                  <motion.div
+                    key={log.id}
+                    whileHover={{ y: reduce ? 0 : -1 }}
+                    className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium truncate">
-                        {user.discordName}
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+                        {log.type}
                       </span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full border text-[10px] ${statusPill(
-                          user.bgStatus === "none" ? "none" : user.bgStatus
-                        )}`}
-                      >
-                        {user.bgStatus === "none"
-                          ? "Nessun BG"
-                          : user.bgStatus === "pending"
-                          ? "BG in attesa"
-                          : user.bgStatus === "approved"
-                          ? "BG approvato"
-                          : "BG rifiutato"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] text-[var(--color-text-muted)]">
-                        Iscritto il{" "}
-                        {new Date(user.joinedAt).toLocaleString("it-IT", {
+                      <span className="text-[10px] text-[var(--color-text-muted)]">
+                        {new Date(log.createdAt).toLocaleString("it-IT", {
                           dateStyle: "short",
                           timeStyle: "short",
                         })}
-                      </p>
-                      <button
-                        type="button"
-                        disabled={isUpdating || isSelf}
-                        onClick={() =>
-                          toggleModerator(user.id, user.isModerator)
-                        }
-                        className={`text-[10px] px-2 py-1 rounded-full border ${
-                          user.isModerator
-                            ? "border-amber-400 text-amber-300"
-                            : "border-[var(--color-border)] text-[var(--color-text-muted)]"
-                        } disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/5`}
-                      >
-                        {isSelf
-                          ? "Tu (admin)"
-                          : user.isModerator
-                          ? "Rimuovi mod"
-                          : "Promuovi a mod"}
-                      </button>
+                      </span>
                     </div>
-                  </div>
-                );
-              })}
-              {paginatedUsers.length === 0 && (
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Nessun utente registrato.
-                </p>
-              )}
-            </div>
+                    <p className="text-[var(--color-text)] text-xs md:text-sm">
+                      {log.message}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
 
-            {/* Pagination users */}
-            <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
-              <button
-                type="button"
-                onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
-                disabled={usersPage === 1}
-                className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg:white/5 hover:bg-white/5"
-              >
-                Prev
-              </button>
-              <span>
-                Pagina {usersPage} / {usersTotalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setUsersPage((p) => Math.min(usersTotalPages, p + 1))
-                }
-                disabled={usersPage === usersTotalPages}
-                className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg:white/5 hover:bg-white/5"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ========== TAB LOGS (solo admin) ========== */}
-      {isAdmin && activeTab === "logs" && (
-        <section className="space-y-4">
-          <h2 className="text-lg md:text-xl font-semibold">Log attività</h2>
-          <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-            Eventi registrati lato staff/backend: approvazioni, rifiuti, login,
-            cambi ruolo, ecc.
-          </p>
-
-          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-[var(--color-text-muted)]">
-                {buildRangeLabel(logs.length, logsPage, PAGE_SIZE_FULL)}
-              </span>
-              <span className="text-[11px] text-[var(--color-text-muted)]">
-                Dati da tabella <code>logs</code>
-              </span>
-            </div>
-
-            <div className="space-y-2 max-h-[420px] overflow-y-auto text-xs md:text-sm">
-              {paginatedLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="rounded-xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
+              <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
+                <button
+                  type="button"
+                  onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
+                  disabled={logsPage === 1}
+                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
                 >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                      {log.type}
-                    </span>
-                    <span className="text-[10px] text-[var(--color-text-muted)]">
-                      {new Date(log.createdAt).toLocaleString("it-IT", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </span>
-                  </div>
-                  <p className="text-[var(--color-text)] text-xs md:text-sm">
-                    {log.message}
-                  </p>
-                </div>
-              ))}
-              {paginatedLogs.length === 0 && (
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Nessun log disponibile.
-                </p>
-              )}
+                  Prev
+                </button>
+                <span>
+                  Pagina {logsPage} / {logsTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLogsPage((p) => Math.min(logsTotalPages, p + 1))
+                  }
+                  disabled={logsPage === logsTotalPages}
+                  className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg-white/5"
+                >
+                  Next
+                </button>
+              </div>
             </div>
-
-            <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
-              <button
-                type="button"
-                onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
-                disabled={logsPage === 1}
-                className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg:white/5 hover:bg-white/5"
-              >
-                Prev
-              </button>
-              <span>
-                Pagina {logsPage} / {logsTotalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setLogsPage((p) => Math.min(logsTotalPages, p + 1))
-                }
-                disabled={logsPage === logsTotalPages}
-                className="px-3 py-1 rounded-full border border-[var(--color-border)] disabled:opacity-40 hover:bg:white/5 hover:bg-white/5"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
+          </motion.section>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

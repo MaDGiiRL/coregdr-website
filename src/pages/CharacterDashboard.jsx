@@ -1,8 +1,15 @@
 // src/pages/CharacterDashboard.jsx
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom"; // ✅ aggiunto
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
+import {
+  alertError,
+  alertSuccess,
+  alertWarning,
+  confirmAction,
+  toast,
+} from "../lib/alerts";
 
 const STATUS_LABELS = {
   pending: "In attesa",
@@ -31,7 +38,7 @@ export default function CharacterDashboard() {
   });
   const [savingEditUser, setSavingEditUser] = useState(false);
 
-  const navigate = useNavigate(); // ✅ hook router
+  const navigate = useNavigate();
 
   useEffect(() => {
     const loadCharacters = async () => {
@@ -46,6 +53,7 @@ export default function CharacterDashboard() {
 
         if (error) {
           console.error("Error fetching user characters", error);
+          await alertError("Errore", "Impossibile caricare i tuoi personaggi.");
           return;
         }
 
@@ -55,6 +63,7 @@ export default function CharacterDashboard() {
         }
       } catch (err) {
         console.error("Error loading characters", err);
+        await alertError("Errore", "Errore imprevisto nel caricamento dati.");
       } finally {
         setLoadingChars(false);
       }
@@ -102,8 +111,20 @@ export default function CharacterDashboard() {
     (c) => c.status === "rejected"
   ).length;
 
-  const startEditUser = () => {
+  const startEditUser = async () => {
     if (!activeCharacter) return;
+
+    // conferma opzionale prima di entrare in edit
+    const ok = await confirmAction({
+      title: "Modificare il background?",
+      text: "Se salvi, il background tornerà in revisione.",
+      confirmText: "Ok, modifica",
+      cancelText: "Annulla",
+      icon: "info",
+    });
+
+    if (!ok) return;
+
     setEditDraftUser({
       storiaBreve: activeCharacter.storia_breve || "",
       condannePenali: activeCharacter.condanne_penali || "",
@@ -113,12 +134,32 @@ export default function CharacterDashboard() {
     setEditModeUser(true);
   };
 
-  const cancelEditUser = () => {
+  const cancelEditUser = async () => {
+    const ok = await confirmAction({
+      title: "Annullare le modifiche?",
+      text: "Le modifiche non salvate andranno perse.",
+      confirmText: "Sì, annulla",
+      cancelText: "Torna indietro",
+    });
+
+    if (!ok) return;
+
     setEditModeUser(false);
   };
 
   const saveEditUser = async () => {
     if (!activeCharacter) return;
+
+    const ok = await confirmAction({
+      title: "Salvare le modifiche?",
+      text: "Il background verrà aggiornato e tornerà in revisione.",
+      confirmText: "Sì, salva",
+      cancelText: "Annulla",
+      icon: "question",
+    });
+
+    if (!ok) return;
+
     setSavingEditUser(true);
     try {
       const { data, error } = await supabase
@@ -128,7 +169,7 @@ export default function CharacterDashboard() {
           condanne_penali: editDraftUser.condannePenali,
           segni_distintivi: editDraftUser.segniDistintivi,
           aspetti_caratteriali: editDraftUser.aspettiCaratteriali,
-          status: "pending", // torna in revisione
+          status: "pending",
           rejection_reason: null,
           updated_at: new Date().toISOString(),
         })
@@ -138,7 +179,10 @@ export default function CharacterDashboard() {
 
       if (error) {
         console.error("Error updating character by user", error);
-        alert("Errore durante il salvataggio del background.");
+        await alertError(
+          "Errore",
+          "Errore durante il salvataggio del background."
+        );
         return;
       }
 
@@ -149,6 +193,7 @@ export default function CharacterDashboard() {
       );
       setEditModeUser(false);
 
+      // log non blocca la UX
       await supabase.from("logs").insert({
         type: "BG_EDITED_USER",
         message: `Background modificato dall'utente per ${data.nome} ${data.cognome}.`,
@@ -157,25 +202,47 @@ export default function CharacterDashboard() {
           user_id: profile.id,
         }),
       });
+
+      toast("success", "Background aggiornato (in revisione)");
+      await alertSuccess(
+        "Background aggiornato",
+        "Il background è stato modificato ed è tornato in revisione."
+      );
     } catch (err) {
       console.error("Error updating character by user", err);
-      alert("Errore generico durante il salvataggio.");
+      await alertError("Errore", "Errore generico durante il salvataggio.");
     } finally {
       setSavingEditUser(false);
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!activeCharacter) return;
 
+    const ok = await confirmAction({
+      title: "Stampare / salvare come PDF?",
+      text: "Si aprirà una nuova finestra pronta per la stampa.",
+      confirmText: "Ok",
+      cancelText: "Annulla",
+      icon: "question",
+    });
+
+    if (!ok) return;
+
     const win = window.open("", "_blank", "width=800,height=900");
-    if (!win) return;
+    if (!win) {
+      await alertWarning(
+        "Popup bloccato",
+        "Il browser ha bloccato la finestra di stampa. Abilita i popup per questo sito."
+      );
+      return;
+    }
 
     const content = `
       <html>
         <head>
-          <title>Background - ${activeCharacter.nome} ${
-      activeCharacter.cognome
+          <title>Background - ${activeCharacter.nome ?? ""} ${
+      activeCharacter.cognome ?? ""
     }</title>
           <style>
             body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; background: #0b0b12; color: #f4f4f9; }
@@ -193,7 +260,9 @@ export default function CharacterDashboard() {
         <body>
           <div class="header-row">
             <div>
-              <h1>${activeCharacter.nome} ${activeCharacter.cognome}</h1>
+              <h1>${activeCharacter.nome ?? ""} ${
+      activeCharacter.cognome ?? ""
+    }</h1>
               <p class="muted">Proprietario: ${
                 user.discordName
               } • Discord ID: ${user.discordId}</p>
@@ -209,9 +278,9 @@ export default function CharacterDashboard() {
       timeStyle: "short",
     })}</p>
             </div>
-            <div class="tag">
-              Stato BG: ${STATUS_LABELS[activeCharacter.status] ?? ""}
-            </div>
+            <div class="tag">Stato BG: ${
+              STATUS_LABELS[activeCharacter.status] ?? ""
+            }</div>
           </div>
 
           <div class="section">
@@ -240,7 +309,7 @@ export default function CharacterDashboard() {
               activeCharacter.patologie?.length
                 ? activeCharacter.patologie
                     .map((p) => "• " + p.nome + (p.inCura ? " (in cura)" : ""))
-                    .join("\n")
+                    .join("\\n")
                 : "Nessuna patologia dichiarata."
             }</p>
             <h3>Dipendenze</h3>
@@ -248,7 +317,7 @@ export default function CharacterDashboard() {
               activeCharacter.dipendenze?.length
                 ? activeCharacter.dipendenze
                     .map((d) => "• " + d.nome + (d.inCura ? " (in cura)" : ""))
-                    .join("\n")
+                    .join("\\n")
                 : "Nessuna dipendenza dichiarata."
             }</p>
           </div>
@@ -376,7 +445,7 @@ export default function CharacterDashboard() {
                       className={`w-full text-left rounded-xl border px-3 py-3 text-xs md:text-sm transition flex flex-col gap-1 ${
                         isActive
                           ? "border-[var(--blue)] bg-[var(--color-surface)]"
-                          : "border-[var(--color-border)] bg-black/20 hover:bg:white/5 hover:bg-white/5"
+                          : "border-[var(--color-border)] bg-black/20 hover:bg-white/5"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -413,7 +482,7 @@ export default function CharacterDashboard() {
               <button
                 type="button"
                 onClick={() => {
-                  navigate("/background"); // ✅ niente reload, sessione salva
+                  navigate("/background");
                 }}
                 className="w-full mt-1 px-3 py-2 rounded-xl text-xs md:text-sm font-semibold bg-[var(--violet)] text-white shadow-md hover:brightness-110 active:scale-95 transition"
               >
