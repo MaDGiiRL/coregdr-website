@@ -101,8 +101,8 @@ export default function Navbar() {
       : "?";
 
   const discordAvatarUrl = useMemo(() => buildDiscordAvatarUrl(meta), [meta]);
-
   const [avatarError, setAvatarError] = useState(false);
+
   useEffect(() => {
     setAvatarError(false);
   }, [discordAvatarUrl]);
@@ -136,6 +136,16 @@ export default function Navbar() {
       document.removeEventListener("mousedown", onClick);
     };
   }, [mobileOpen, userOpen]);
+
+  // ✅ blocca scroll body quando drawer aperto (evita effetti strani)
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
 
   const handleLogout = async () => {
     const ok = await confirmAction({
@@ -195,8 +205,16 @@ export default function Navbar() {
     },
   };
 
+  // ✅ z-index “hard” per stare SEMPRE sopra al Canvas
+  const Z_NAV = 100000;
+  const Z_OVER = 100001;
+  const Z_DRAWER = 100002;
+
   return (
-    <header className="w-full border-b border-[var(--color-border)]/40 bg-[#13142b]/70 backdrop-blur relative z-[9999]">
+    <header
+      className="fixed top-0 left-0 right-0 w-full border-b border-[var(--color-border)]/40 bg-[#13142b]/70 backdrop-blur"
+      style={{ zIndex: Z_NAV }}
+    >
       <nav className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         {/* LOGO */}
         <Link
@@ -332,7 +350,8 @@ export default function Navbar() {
                   {userOpen && (
                     <motion.div
                       {...dropdownAnim}
-                      className="absolute right-0 mt-2 w-60 rounded-2xl border border-[var(--color-border)] bg-[#181a33]/98 shadow-[0_18px_45px_rgba(0,0,0,0.7)] p-2 text-xs md:text-sm z-[9999]"
+                      className="absolute right-0 mt-2 w-60 rounded-2xl border border-[var(--color-border)] bg-[#181a33]/98 shadow-[0_18px_45px_rgba(0,0,0,0.7)] p-2 text-xs md:text-sm overflow-hidden"
+                      style={{ zIndex: Z_DRAWER }}
                     >
                       <div className="px-2 py-2 border-b border-[var(--color-border)]/60 mb-2">
                         <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
@@ -401,7 +420,8 @@ export default function Navbar() {
           <>
             <motion.div
               {...overlayAnim}
-              className="fixed inset-0 bg-black/70 z-[9998]" // ✅ più scuro
+              className="fixed inset-0 bg-black/70"
+              style={{ zIndex: Z_OVER }}
               onClick={() => setNotifOpen(false)}
             />
             <motion.div
@@ -418,7 +438,8 @@ export default function Navbar() {
                 scale: 0.98,
                 transition: { duration: 0.12 },
               }}
-              className="fixed right-4 top-16 md:top-20 w-[92%] max-w-[420px] rounded-2xl border border-[var(--color-border)] bg-[#181a33]/98 shadow-[0_18px_60px_rgba(0,0,0,0.75)] z-[9999] overflow-hidden"
+              className="fixed right-4 top-16 md:top-20 w-[92%] max-w-[420px] rounded-2xl border border-[var(--color-border)] bg-[#181a33]/98 shadow-[0_18px_60px_rgba(0,0,0,0.75)] overflow-hidden"
+              style={{ zIndex: Z_DRAWER }}
             >
               <div className="p-3 border-b border-[var(--color-border)]/60 flex items-center justify-between gap-2">
                 <div>
@@ -492,10 +513,10 @@ export default function Navbar() {
       <AnimatePresence>
         {mobileOpen && (
           <>
-            {/* ✅ overlay più scuro + click chiude */}
             <motion.div
               {...overlayAnim}
-              className="fixed inset-0 bg-black/70 z-[9998]"
+              className="fixed inset-0 bg-black/70"
+              style={{ zIndex: Z_OVER }}
               onClick={() => setMobileOpen(false)}
             />
 
@@ -503,12 +524,12 @@ export default function Navbar() {
               {...drawerAnim}
               ref={mobileRef}
               className={[
-                // ✅ sfondo "vero", non trasparente
-                "fixed top-0 right-0 h-full w-[86%] max-w-[360px] z-[9999]",
+                "fixed top-0 right-0 h-[100dvh] w-[86%] max-w-[360px]",
                 "border-l border-[var(--color-border)]",
                 "bg-[#0b0d1b] text-[var(--color-text)]",
                 "shadow-[0_22px_80px_rgba(0,0,0,0.85)]",
               ].join(" ")}
+              style={{ zIndex: Z_DRAWER }}
             >
               <div className="p-4 flex items-center justify-between border-b border-[var(--color-border)]/60">
                 <div className="flex items-center gap-2">
@@ -531,7 +552,6 @@ export default function Navbar() {
                 </button>
               </div>
 
-              {/* LINKS */}
               <div className="p-4 space-y-2">
                 {navItems.map((it) => {
                   const Icon = it.icon;
@@ -556,7 +576,6 @@ export default function Navbar() {
                 })}
               </div>
 
-              {/* AUTH mobile */}
               <div className="p-4 border-t border-[var(--color-border)]/60 space-y-3">
                 {loading && !session && !profile ? (
                   <div className="h-10 w-full rounded-2xl bg-white/5 animate-pulse" />

@@ -13,7 +13,7 @@ export default function Layout() {
       }}
     >
       <Navbar />
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 py-10">
+      <main className="flex-1 w-full max-w-7xl mx-auto  py-10">
         <Outlet />
       </main>
       <Footer />

@@ -4,9 +4,6 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss(),],
-  mode: 'development',  // Assicurati che l'app venga eseguita in modalità sviluppo
-  build: {
-    minify: false, // Disabilita la minificazione del codice
-  },
+  plugins: [react(), tailwindcss()],
+  build: { minify: false },
 })

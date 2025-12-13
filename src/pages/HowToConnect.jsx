@@ -1,7 +1,26 @@
 // src/pages/HowToConnect.jsx
 import { useState } from "react";
 import { motion } from "framer-motion";
+import {
+  ShoppingCart,
+  Download,
+  PlugZap,
+  TerminalSquare,
+  Users,
+  ClipboardCheck,
+  UserPlus,
+  ArrowLeftRight,
+  Info,
+  ArrowRight,
+  Sparkles,
+  LifeBuoy,
+} from "lucide-react";
 
+import GtaRunBackground from "../components/backgrounds/GtaRunBackground";
+
+// -------------------------
+// DATA
+// -------------------------
 const steps = [
   {
     id: 1,
@@ -25,7 +44,7 @@ const steps = [
     description:
       "Avvia FiveM, premi F8 per aprire la console e incolla il comando di connessione al nostro server.",
     buttonLabel: "CONNETTITI",
-    buttonHref: "fivem://connect/tuo-ip-o-endpoint-qui", // metti il tuo
+    buttonHref: "fivem://connect/tuo-ip-o-endpoint-qui",
     code: "fivem://connect/tuo-ip-o-endpoint-qui",
   },
   {
@@ -34,7 +53,7 @@ const steps = [
     description:
       "Una volta in game e/o prima di entrare, unisciti al nostro Discord per regolamento, annunci, ticket e whitelist.",
     buttonLabel: "DISCORD",
-    buttonHref: "https://discord.gg/tuo-invite", // metti il tuo
+    buttonHref: "https://discord.gg/tuo-invite",
   },
   {
     id: 5,
@@ -54,35 +73,196 @@ const steps = [
   },
 ];
 
+const stepIcon = (id) => {
+  switch (id) {
+    case 1:
+      return ShoppingCart;
+    case 2:
+      return Download;
+    case 3:
+      return PlugZap;
+    case 4:
+      return Users;
+    case 5:
+      return ClipboardCheck;
+    case 6:
+      return UserPlus;
+    default:
+      return Sparkles;
+  }
+};
+
+// -------------------------
+// UI
+// -------------------------
+const StepCard = ({ step }) => {
+  const Icon = stepIcon(step.id);
+
+  return (
+    <article
+      className="
+        h-[380px] md:h-[400px] lg:h-[420px]
+        rounded-3xl border border-[var(--color-border)]
+        bg-[var(--color-surface)]/90
+        px-6 py-6 md:px-7 md:py-7
+        flex flex-col
+        transition-colors duration-300
+        hover:border-[var(--color-accent-cool)]
+        hover:bg-[rgba(31,33,64,0.98)]
+        hover:shadow-[0_0_10px_rgba(53,210,255,0.35)]
+      "
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-4 min-w-0">
+          <div
+            className="
+              h-10 w-10 md:h-11 md:w-11
+              rounded-full flex items-center justify-center shrink-0
+              bg-[radial-gradient(circle_at_top,var(--violet-light),var(--violet))]
+              text-white shadow-[0_0_18px_rgba(111,47,217,0.6)]
+            "
+          >
+            <Icon className="h-5 w-5" />
+          </div>
+
+          <div className="min-w-0 mt-4">
+            <p className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+              <Sparkles className="h-3.5 w-3.5 opacity-80" />
+              Step {step.id}
+            </p>
+          </div>
+        </div>
+
+        <a
+          href={step.buttonHref}
+          target={step.buttonHref.startsWith("http") ? "_blank" : undefined}
+          rel="noreferrer"
+          className="
+            hidden sm:inline-flex items-center gap-2
+            px-5 py-2.5 rounded-full text-xs md:text-sm font-semibold
+            bg-[linear-gradient(135deg,var(--violet),var(--blue))]
+            text-white shadow-md hover:brightness-110 active:scale-95
+            whitespace-nowrap
+          "
+        >
+          <ArrowRight className="h-4 w-4" />
+          {step.buttonLabel}
+        </a>
+      </div>
+
+      <h2 className="mt-4 pl-1 text-base md:text-lg font-semibold leading-snug flex items-start gap-2">
+        <Info className="h-5 w-5 mt-[2px] text-[var(--color-text-muted)]" />
+        <span className="min-w-0">{step.title}</span>
+      </h2>
+
+      <div className="mt-5 h-px w-full bg-white/10" />
+
+      <div className="mt-5 flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto pr-1 space-y-4">
+          <p className="text-sm md:text-base text-[var(--color-text-muted)] leading-relaxed">
+            {step.description}
+          </p>
+
+          {step.code && (
+            <div className="space-y-2">
+              <p className="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                <TerminalSquare className="h-4 w-4" />
+                Comando console
+              </p>
+              <pre className="p-3 rounded-2xl bg-black/40 text-[11px] md:text-xs text-[var(--color-accent-cool)] overflow-x-auto border border-white/10">
+                {step.code}
+              </pre>
+              <p className="text-[11px] text-[var(--color-text-muted)] flex items-center gap-2">
+                <PlugZap className="h-4 w-4 opacity-80" />
+                Suggerimento: apri FiveM → premi{" "}
+                <span className="font-semibold">F8</span> → incolla → invio.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="pt-5">
+        <a
+          href={step.buttonHref}
+          target={step.buttonHref.startsWith("http") ? "_blank" : undefined}
+          rel="noreferrer"
+          className="
+            sm:hidden inline-flex items-center gap-2
+            px-5 py-2.5 rounded-full text-sm font-semibold
+            bg-[linear-gradient(135deg,var(--violet),var(--blue))]
+            text-white shadow-md hover:brightness-110 active:scale-95
+          "
+        >
+          <ArrowRight className="h-4 w-4" />
+          {step.buttonLabel}
+        </a>
+      </div>
+    </article>
+  );
+};
+
 export default function HowToConnect() {
-  // duplico per il loop infinito
   const loopedSteps = [...steps, ...steps];
   const [isPaused, setIsPaused] = useState(false);
 
   return (
-    <section className="space-y-8">
-      <header className="space-y-3">
-        <h1 className="text-2xl md:text-3xl font-semibold">
-          Come connettersi al server
-        </h1>
-        <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-2xl">
-          Segui questi passaggi per entrare su <strong>Core Roleplay</strong> e
-          ottenere passaporto, whitelist e background approvato.
-        </p>
+    <section className="space-y-6 relative mt-25" style={{ zIndex: 10 }}>
+      {/* ✅ Sfondo come componente separato */}
+      <GtaRunBackground navHeight={70} />
+
+      <header className="space-y-3 relative" style={{ zIndex: 10 }}>
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl border border-[var(--color-border)] bg-white/5 p-2">
+            <Sparkles className="h-5 w-5 text-[var(--color-accent-cool)]" />
+          </div>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-semibold">
+              Come connettersi al server
+            </h1>
+            <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-2xl">
+              Segui questi passaggi per entrare su{" "}
+              <strong>Core Roleplay</strong> e ottenere passaporto, whitelist e
+              background approvato.
+            </p>
+          </div>
+        </div>
       </header>
 
-      {/* Carosello auto-scroll in loop */}
-      <div className="relative mt-8 overflow-hidden">
-        {/* fade sinistra */}
-        <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-[#181a33] to-transparent z-10" />
-        {/* fade destra */}
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-[#181a33] to-transparent z-10" />
+      {/* MOBILE */}
+      <div className="md:hidden relative" style={{ zIndex: 10 }}>
+        <div className="relative mt-6 overflow-hidden">
+          <div
+            className="flex items-stretch gap-4 overflow-x-auto pb-4 snap-x snap-mandatory pr-6"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            {steps.map((step) => (
+              <div
+                key={step.id}
+                className="snap-center shrink-0 w-[88%] max-w-[88%]"
+              >
+                <StepCard step={step} />
+              </div>
+            ))}
+          </div>
 
+          <p className="mt-1 text-[11px] text-[var(--color-text-muted)] flex items-center gap-2">
+            <ArrowLeftRight className="h-4 w-4" />
+            Scorri a destra/sinistra per vedere i passaggi.
+          </p>
+        </div>
+      </div>
+
+      {/* DESKTOP */}
+      <div
+        className="relative mt-8 overflow-hidden hidden md:block"
+        style={{ zIndex: 10 }}
+      >
         <motion.div
-          className="flex gap-4 md:gap-6"
+          className="flex items-stretch gap-4 md:gap-6"
           animate={{ x: ["0%", "-50%"] }}
           transition={{
-            duration: isPaused ? 120 : 30, // in hover rallenta quasi a zero
+            duration: isPaused ? 120 : 30,
             ease: "linear",
             repeat: Infinity,
             repeatType: "loop",
@@ -91,115 +271,37 @@ export default function HowToConnect() {
           onMouseLeave={() => setIsPaused(false)}
         >
           {loopedSteps.map((step, index) => (
-            <article
+            <div
               key={`${step.id}-${index}`}
-              className="
-                min-w-[280px] md:min-w-[340px] lg:min-w-[380px]
-                rounded-3xl border border-[var(--color-border)]
-                bg-[var(--color-surface)]/90 
-                px-6 py-5 md:px-7 md:py-6
-                flex flex-col gap-4
-                transition-colors duration-300
-                hover:border-[var(--color-accent-cool)]
-                hover:bg-[rgba(31,33,64,0.98)]
-                hover:shadow-[0_0_10px_rgba(53,210,255,0.35)]
-              "
+              className="min-w-[280px] md:min-w-[340px] lg:min-w-[380px]"
             >
-              {/* Top: numero + titolo + pulsante */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-4">
-                  <div
-                    className="
-                      h-9 w-9 md:h-10 md:w-10
-                      rounded-full flex items-center justify-center
-                      bg-[radial-gradient(circle_at_top,var(--violet-light),var(--violet))]
-                      text-white font-bold text-sm md:text-base
-                      shadow-[0_0_18px_rgba(111,47,217,0.6)]
-                    "
-                  >
-                    {step.id}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                      Step {step.id}
-                    </p>
-                    <h2 className="text-sm md:text-base lg:text-lg font-semibold">
-                      {step.title}
-                    </h2>
-                  </div>
-                </div>
-
-                <a
-                  href={step.buttonHref}
-                  target={
-                    step.buttonHref.startsWith("http") ? "_blank" : undefined
-                  }
-                  rel="noreferrer"
-                  className="
-                    hidden sm:inline-flex
-                    px-5 py-2 rounded-full text-xs md:text-sm font-semibold
-                    bg-[linear-gradient(135deg,var(--violet),var(--blue))]
-                    text-white shadow-md hover:brightness-110 active:scale-95
-                    whitespace-nowrap
-                  "
-                >
-                  {step.buttonLabel}
-                </a>
-              </div>
-
-              {/* Descrizione + eventuale codice */}
-              <div className="space-y-2">
-                <p className="text-xs md:text-sm text-[var(--color-text-muted)] leading-relaxed">
-                  {step.description}
-                </p>
-
-                {step.code && (
-                  <div>
-                    <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                      Comando console:
-                    </p>
-                    <pre className="mt-0 p-2 rounded-2xl bg-black/40 text-[11px] md:text-xs text-[var(--color-accent-cool)] overflow-x-auto border border-white/10">
-                      {step.code}
-                    </pre>
-                  </div>
-                )}
-              </div>
-
-              {/* Bottone mobile (sotto) */}
-              <a
-                href={step.buttonHref}
-                target={
-                  step.buttonHref.startsWith("http") ? "_blank" : undefined
-                }
-                rel="noreferrer"
-                className="
-                  sm:hidden inline-flex
-                  px-5 py-2 rounded-full text-xs font-semibold
-                  bg-[linear-gradient(135deg,var(--violet),var(--blue))]
-                  text-white shadow-md hover:brightness-110 active:scale-95
-                  self-start
-                "
-              >
-                {step.buttonLabel}
-              </a>
-            </article>
+              <StepCard step={step} />
+            </div>
           ))}
         </motion.div>
       </div>
 
-      {/* Box finale di supporto */}
-      <div className="mt-2 text-xs md:text-sm text-[var(--color-text-muted)] p-4 rounded-2xl border border-[var(--color-border)] bg-white/5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          Se riscontri problemi di connessione o con la whitelist, apri un
-          ticket sul <strong>Discord</strong> e specifica screenshot e orario
-          del problema.
+      {/* BOX FINALE */}
+      <div
+        className="mt-2 text-xs md:text-sm text-[var(--color-text-muted)] p-4 rounded-2xl border border-[var(--color-border)] bg-white/5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative"
+        style={{ zIndex: 10 }}
+      >
+        <div className="flex items-start gap-2">
+          <LifeBuoy className="h-4 w-4 mt-0.5 text-[var(--color-accent-cool)]" />
+          <div>
+            Se riscontri problemi di connessione o con la whitelist, apri un
+            ticket sul <strong>Discord</strong> e specifica screenshot e orario
+            del problema.
+          </div>
         </div>
+
         <a
-          href="https://discord.gg/tuo-invite" // sostituisci con il tuo
+          href="https://discord.gg/tuo-invite"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex justify-center px-4 py-2 rounded-full text-xs md:text-sm font-medium bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 transition"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-xs md:text-sm font-medium bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 transition"
         >
+          <Users className="h-4 w-4" />
           Apri Discord
         </a>
       </div>

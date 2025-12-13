@@ -27,6 +27,28 @@ const statusPill = (status) =>
   STATUS_COLORS[status] ??
   "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]";
 
+// ✅ Sidebar card “colorata” per stato (senza badge)
+const statusCardClass = (status, isActive) => {
+  const base =
+    "w-full text-left rounded-2xl border px-4 py-3 text-xs md:text-sm transition";
+  const ring = isActive ? " ring-2 ring-[var(--blue)]" : "";
+  const hover = isActive ? "" : " hover:brightness-110";
+
+  if (status === "approved") {
+    return `${base} border-emerald-400/30 bg-emerald-400/10 text-emerald-100${hover}${ring}`;
+  }
+  if (status === "pending") {
+    return `${base} border-yellow-400/30 bg-yellow-400/10 text-yellow-100${hover}${ring}`;
+  }
+  if (status === "rejected") {
+    return `${base} border-red-400/30 bg-red-400/10 text-red-100${hover}${ring}`;
+  }
+
+  return `${base} border-[var(--color-border)] bg-black/20 text-[var(--color-text)]${
+    isActive ? " bg-[var(--color-surface)]" : " hover:bg-white/5"
+  }${ring}`;
+};
+
 export default function CharacterDashboard() {
   const { profile, loading, session } = useAuth();
 
@@ -48,7 +70,7 @@ export default function CharacterDashboard() {
   const shellCard =
     "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
 
-  // ✅ useMemo DEVE stare prima di qualsiasi return
+  // ✅ useMemo prima dei return
   const totals = useMemo(() => {
     const totalApproved = characters.filter(
       (c) => c.status === "approved"
@@ -92,7 +114,6 @@ export default function CharacterDashboard() {
     if (profile) loadCharacters();
   }, [profile]);
 
-  // ✅ adesso i return condizionali sono OK (hook già chiamati sopra)
   if (loading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
@@ -243,13 +264,81 @@ export default function CharacterDashboard() {
     }
   };
 
+  // =========================
+  // EXPORT (SOLO STAMPA)
+  // =========================
+
+  const buildPrintHtml = () => `
+    <html>
+      <head>
+        <title>Background - ${activeCharacter?.nome ?? ""} ${
+    activeCharacter?.cognome ?? ""
+  }</title>
+        <style>
+          body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; background: #0b0b12; color: #f4f4f9; }
+          h1, h2, h3 { margin-bottom: 4px; }
+          h1 { font-size: 22px; }
+          h2 { font-size: 18px; margin-top: 20px; }
+          h3 { font-size: 15px; margin-top: 14px; }
+          p { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+          .section { border: 1px solid #33374f; border-radius: 12px; padding: 12px 16px; margin-top: 12px; background: #111325; }
+          .muted { color: #a3a7d1; font-size: 12px; }
+          .header-row { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:12px; }
+          .tag { border-radius:999px; border:1px solid #444a7a; padding:2px 10px; font-size:11px; }
+        </style>
+      </head>
+      <body>
+        <div class="header-row">
+          <div>
+            <h1>${activeCharacter?.nome ?? ""} ${
+    activeCharacter?.cognome ?? ""
+  }</h1>
+            <p class="muted">Proprietario: ${user.discordName} • Discord ID: ${
+    user.discordId
+  }</p>
+            <p class="muted">Creato il ${new Date(
+              activeCharacter?.created_at
+            ).toLocaleString("it-IT", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })} • Ultimo aggiornamento ${new Date(
+    activeCharacter?.updated_at
+  ).toLocaleString("it-IT", {
+    dateStyle: "short",
+    timeStyle: "short",
+  })}</p>
+          </div>
+          <div class="tag">Stato BG: ${
+            STATUS_LABELS[activeCharacter?.status] ?? ""
+          }</div>
+        </div>
+
+        <div class="section">
+          <h2>II. Storia del personaggio</h2>
+          <h3>Storia in breve</h3>
+          <p>${activeCharacter?.storia_breve || "-"}</p>
+          <h3>Condanne penali</h3>
+          <p>${activeCharacter?.condanne_penali || "Nessuna indicata."}</p>
+        </div>
+
+        <div class="section">
+          <h2>III. Caratteristiche del personaggio</h2>
+          <h3>Segni distintivi e particolari</h3>
+          <p>${activeCharacter?.segni_distintivi || "-"}</p>
+          <h3>Aspetti caratteriali</h3>
+          <p>${activeCharacter?.aspetti_caratteriali || "-"}</p>
+        </div>
+      </body>
+    </html>
+  `;
+
   const handlePrint = async () => {
     if (!activeCharacter) return;
 
     const ok = await confirmAction({
-      title: "Stampare / salvare come PDF?",
+      title: "Stampare il background?",
       text: "Si aprirà una nuova finestra pronta per la stampa.",
-      confirmText: "Ok",
+      confirmText: "Stampa",
       cancelText: "Annulla",
       icon: "question",
     });
@@ -265,76 +354,15 @@ export default function CharacterDashboard() {
       return;
     }
 
-    const content = `
-      <html>
-        <head>
-          <title>Background - ${activeCharacter.nome ?? ""} ${
-      activeCharacter.cognome ?? ""
-    }</title>
-          <style>
-            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; background: #0b0b12; color: #f4f4f9; }
-            h1, h2, h3 { margin-bottom: 4px; }
-            h1 { font-size: 22px; }
-            h2 { font-size: 18px; margin-top: 20px; }
-            h3 { font-size: 15px; margin-top: 14px; }
-            p { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-            .section { border: 1px solid #33374f; border-radius: 12px; padding: 12px 16px; margin-top: 12px; background: #111325; }
-            .muted { color: #a3a7d1; font-size: 12px; }
-            .header-row { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:12px; }
-            .tag { border-radius:999px; border:1px solid #444a7a; padding:2px 10px; font-size:11px; }
-          </style>
-        </head>
-        <body>
-          <div class="header-row">
-            <div>
-              <h1>${activeCharacter.nome ?? ""} ${
-      activeCharacter.cognome ?? ""
-    }</h1>
-              <p class="muted">Proprietario: ${
-                user.discordName
-              } • Discord ID: ${user.discordId}</p>
-              <p class="muted">Creato il ${new Date(
-                activeCharacter.created_at
-              ).toLocaleString("it-IT", {
-                dateStyle: "short",
-                timeStyle: "short",
-              })} • Ultimo aggiornamento ${new Date(
-      activeCharacter.updated_at
-    ).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}</p>
-            </div>
-            <div class="tag">Stato BG: ${
-              STATUS_LABELS[activeCharacter.status] ?? ""
-            }</div>
-          </div>
-
-          <div class="section">
-            <h2>II. Storia del personaggio</h2>
-            <h3>Storia in breve</h3>
-            <p>${activeCharacter.storia_breve || "-"}</p>
-            <h3>Condanne penali</h3>
-            <p>${activeCharacter.condanne_penali || "Nessuna indicata."}</p>
-          </div>
-
-          <div class="section">
-            <h2>III. Caratteristiche del personaggio</h2>
-            <h3>Segni distintivi e particolari</h3>
-            <p>${activeCharacter.segni_distintivi || "-"}</p>
-            <h3>Aspetti caratteriali</h3>
-            <p>${activeCharacter.aspetti_caratteriali || "-"}</p>
-          </div>
-        </body>
-      </html>
-    `;
-
     win.document.open();
-    win.document.write(content);
+    win.document.write(buildPrintHtml());
     win.document.close();
     win.focus();
     win.print();
   };
 
   return (
-    <section className="space-y-6">
+    <section className="w-full max-w-screen-2xl mx-auto px-3 md:px-6 space-y-4">
       <header className={`${shellCard} p-5 md:p-6 space-y-4`}>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -421,6 +449,7 @@ export default function CharacterDashboard() {
               <div className="space-y-2 max-h-[420px] overflow-y-auto">
                 {characters.map((pg) => {
                   const isActive = activeCharacter?.id === pg.id;
+
                   return (
                     <button
                       key={pg.id}
@@ -429,31 +458,25 @@ export default function CharacterDashboard() {
                         setActiveCharacterId(pg.id);
                         setEditModeUser(false);
                       }}
-                      className={`w-full text-left rounded-2xl border px-4 py-3 text-xs md:text-sm transition ${
-                        isActive
-                          ? "border-[var(--blue)] bg-[var(--color-surface)]"
-                          : "border-[var(--color-border)] bg-black/20 hover:bg-white/5"
-                      }`}
+                      className={statusCardClass(pg.status, isActive)}
+                      title={`Stato: ${STATUS_LABELS[pg.status] ?? "—"}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold truncate">
                           {pg.nome} {pg.cognome}
                         </span>
-                        <span
-                          className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
-                            pg.status
-                          )}`}
-                        >
-                          {STATUS_LABELS[pg.status]}
-                        </span>
                       </div>
 
-                      <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">
+                      <p className="mt-1 text-[10px] opacity-80">
                         Creato il{" "}
                         {new Date(pg.created_at).toLocaleString("it-IT", {
                           dateStyle: "short",
                           timeStyle: "short",
                         })}
+                      </p>
+
+                      <p className="mt-1 text-[10px] opacity-80">
+                        Stato: {STATUS_LABELS[pg.status] ?? "—"}
                       </p>
                     </button>
                   );
@@ -532,6 +555,7 @@ export default function CharacterDashboard() {
                       <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
                         Storia in breve
                       </p>
+
                       {editModeUser ? (
                         <textarea
                           disabled={savingEditUser || isApproved}
@@ -565,15 +589,6 @@ export default function CharacterDashboard() {
                         <Pencil className="w-4 h-4" />
                         Modifica background
                       </button>
-
-                      <button
-                        type="button"
-                        onClick={handlePrint}
-                        className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 inline-flex items-center gap-2"
-                      >
-                        <Printer className="w-4 h-4" />
-                        Scarica PDF / stampa
-                      </button>
                     </>
                   ) : (
                     <>
@@ -587,6 +602,7 @@ export default function CharacterDashboard() {
                           ? "Salvataggio..."
                           : "Salva modifiche (torna in revisione)"}
                       </button>
+
                       <button
                         type="button"
                         onClick={cancelEditUser}
@@ -597,6 +613,16 @@ export default function CharacterDashboard() {
                       </button>
                     </>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    disabled={!activeCharacter || savingEditUser}
+                    className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 inline-flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Stampa
+                  </button>
                 </div>
               </div>
             ) : (

@@ -218,7 +218,7 @@ export default function AdminDashboard() {
       // ✅ NEW: SERVER LOGS
       const { data: serverLogsData, error: serverLogsError } = await supabase
         .from("server_logs")
-        .select("id, plugin, type, description, embeds, created_at")
+        .select("id, plugin, type, description, created_at")
         .order("created_at", { ascending: false });
 
       if (serverLogsError) {
@@ -231,7 +231,6 @@ export default function AdminDashboard() {
             plugin: l.plugin ?? "unknown",
             type: l.type ?? "GENERIC",
             description: l.description ?? "",
-            embeds: l.embeds ?? null,
             createdAt: l.created_at,
           }))
         );
@@ -769,36 +768,6 @@ export default function AdminDashboard() {
         {/* BACKGROUNDS */}
         {activeTab === "backgrounds" && (
           <motion.section key="backgrounds" {...pageAnim} className="space-y-4">
-            <div className={`${shellCard} p-4 md:p-5`}>
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-                    <FileText className="w-5 h-5" />
-                    Coda background
-                  </h2>
-                  <p className="mt-1 text-xs md:text-sm text-[var(--color-text-muted)]">
-                    Gestisci i background inviati dai giocatori.
-                  </p>
-                </div>
-
-                {!isAdmin && (
-                  <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs">
-                    <div className="flex items-start gap-2">
-                      <UserCog className="w-4 h-4 mt-0.5 text-amber-300" />
-                      <div>
-                        <p className="font-semibold text-amber-200">
-                          Permessi limitati
-                        </p>
-                        <p className="text-[11px] text-amber-200/80">
-                          Come moderatore puoi solo approvare o rifiutare.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
             <BackgroundQueue />
           </motion.section>
         )}
@@ -1038,11 +1007,6 @@ export default function AdminDashboard() {
                         <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
                           {l.type}
                         </span>
-                        {l.embeds && (
-                          <span className="px-2 py-0.5 rounded-full border border-[var(--color-border)] bg-black/20 text-[10px] text-[var(--color-text-muted)]">
-                            embeds
-                          </span>
-                        )}
                       </div>
 
                       <span className="text-[10px] text-[var(--color-text-muted)]">
@@ -1057,11 +1021,6 @@ export default function AdminDashboard() {
                       {l.description}
                     </p>
 
-                    {l.embeds && (
-                      <pre className="mt-2 text-[10px] leading-relaxed overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-black/30 p-3 text-[var(--color-text-muted)]">
-                        {JSON.stringify(l.embeds, null, 2)}
-                      </pre>
-                    )}
                   </div>
                 ))}
 

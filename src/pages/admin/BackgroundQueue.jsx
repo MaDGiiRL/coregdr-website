@@ -489,9 +489,6 @@ export default function BackgroundQueue() {
             <h2 className="text-xl md:text-2xl font-semibold">
               Moderazione background
             </h2>
-            <p className="text-xs md:text-sm text-[var(--color-text-muted)] max-w-3xl">
-              Coda dei background (tabella <code>characters</code>).
-            </p>
           </div>
 
           <motion.button
