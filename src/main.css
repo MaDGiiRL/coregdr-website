@@ -42,6 +42,10 @@ body {
     width: 100%;
     overflow-x: hidden;
 }
+a, button {
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+}
 
 body {
     margin: 0;
