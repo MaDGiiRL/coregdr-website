@@ -12,16 +12,18 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.2",
+    "@react-three/postprocessing": "^3.0.4",
     "@supabase/supabase-js": "^2.87.1",
     "@tailwindcss/vite": "^4.1.17",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.561.0",
+    "postprocessing": "^6.38.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-router-dom": "^7.10.1",
     "sweetalert2": "^11.26.4",
     "tailwindcss": "^4.1.17",
-    "three": "^0.182.0"
+    "three": "^0.181.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
