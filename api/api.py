@@ -1583,9 +1583,6 @@ def check_roles():
             print(f"Errore ruolo {discord_id}:", e)
             results[discord_id] = {"isAdmin": False, "isMod": False}
 
-    print(ids_param)
-    print(results)
-
     return jsonify(results)
 
 # --------------------------------------------------------------------------
