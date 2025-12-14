@@ -5,7 +5,7 @@ Apri **due terminali separati**:
 - Terminale 1 → Backend:
 
 ```bash
-python fivelivesAPI.py
+python api.py
 ```
 
 - Terminale 2 → Frontend:
