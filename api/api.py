@@ -26,20 +26,21 @@ load_dotenv()
 PORT = os.environ.get("PORT", 3001)
 LOG_AUTHORIZED_PORTS = ["30120"]
 
-DB_USER = os.environ.get("DB_USER", "postgres")
-DB_HOST = os.environ.get("DB_HOST", "localhost")
-DB_NAME = os.environ.get("DB_NAME", "fivelives")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "admin")
-DB_PORT = os.environ.get("DB_PORT", 5432)
+SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
+SUPABASE_KEY = os.getenv("VITE_SUPABASE_KEY")
+
+SUPABASE_HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+}
 
 DB_USER_FIVEM = os.environ.get("DB_USER_FIVEM", "root")
 DB_HOST_FIVEM = os.environ.get("DB_HOST_FIVEM", "localhost")
 DB_NAME_FIVEM = os.environ.get("DB_NAME_FIVEM", "coredb")
 DB_PASSWORD_FIVEM = os.environ.get("DB_PASSWORD_FIVEM", "password")
 DB_PORT_FIVEM = os.environ.get("DB_PORT_FIVEM", 3306)
-
-CLIENT_ID = os.environ.get("CLIENT_ID")
-CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
 
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")
@@ -62,21 +63,6 @@ else:
     weapons_path = "../tablet/src/assets/weapons.lua"
     player_path = "../tablet/src/assets/playersDB.json"
     profilepics_folder = "../tablet/src/assets/profilepics"
-
-try:
-    db_pool = pool.SimpleConnectionPool(
-        1, 10,
-        user=DB_USER,
-        host=DB_HOST,
-        database=DB_NAME,
-        password=DB_PASSWORD,
-        port=DB_PORT
-    )
-    if db_pool:
-        print("Connesso a PostgreSQL")
-
-except Exception as e:
-    print("Errore di connessione al database:", e)
     
 def generate_jwt_token(user_id):
     expiration = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
@@ -108,6 +94,38 @@ def server_status():
     except Exception as e:
         print("FiveM status error:", e)
         return jsonify({"online": False})
+    
+# --------------------------------------------------------------------------
+# SUPABASE FUNCTIONS
+# -------------------------------------------------------------------------- 
+def supabase_select(table, filters=None):
+    url = f"{SUPABASE_URL}{table}"
+    params = filters or {}
+    r = requests.get(url, headers=SUPABASE_HEADERS, params=params)
+    r.raise_for_status()
+    return r.json()
+
+# --- INSERT ---
+def supabase_insert(table, data):
+    url = f"{SUPABASE_URL}{table}"
+    r = requests.post(url, headers=SUPABASE_HEADERS, json=data)
+    r.raise_for_status()
+    return r.json()
+
+# --- UPDATE ---
+def supabase_update(table, data, filters):
+    url = f"{SUPABASE_URL}{table}"
+    params = filters
+    r = requests.patch(url, headers=SUPABASE_HEADERS, params=params, json=data)
+    r.raise_for_status()
+    return r.json()
+
+# --- DELETE ---
+def supabase_delete(table, filters):
+    url = f"{SUPABASE_URL}{table}"
+    r = requests.delete(url, headers=SUPABASE_HEADERS, params=filters)
+    r.raise_for_status()
+    return r.json()
 
 # --------------------------------------------------------------------------
 # ENDPOINT DI LOGIN
@@ -1453,107 +1471,41 @@ def get_vehicles():
     finally:
         if conn and conn.is_connected():
             conn.close()
-            
-            
-@app.route('/api/logs/<plugin>', methods=['POST'])
-def get_logs(plugin):
+        
+@app.route('/api/logs', methods=['POST'])
+#@token_required
+def add_logs():
     ip = request.remote_addr
     port = request.environ.get('REMOTE_PORT')
     
     if not ((ip == "0.0.0.0" and port in LOG_AUTHORIZED_PORTS)):
        return jsonify({"error": "Accesso non autorizzato"}), 403
-
-    conn = db_pool.getconn()
         
     try:
-        data = request.get_json(force=True, silent=True) 
-        
+        data = request.get_json(silent=True) 
+
         if not data:
-            return jsonify({"error": "No JSON data received"}), 400
-        
-        if 'avatar_url' not in data:
-            data['avatar_url'] = None
-        
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            query = """
-                INSERT INTO logs (plugin, avatar_url, embeds, username)
-                VALUES (%s, %s, %s, %s)
-            """
-            cur.execute(query, (plugin, data['avatar_url'], json.dumps(data['embeds'][0]), data['username'] if 'username' in data else None))
-            conn.commit()
-            
-            return jsonify({"success": "Log successfully inserted"}), 200
-        
-    except Exception as e:
-        print("Error executing query:", e)
-        return jsonify({"error": "Internal Server Error"}), 500
-    finally:
-        db_pool.putconn(conn)
-        
-@app.route('/api/logs/<plugin>/<type>', methods=['POST'])
-#@token_required
-def get_logs_plugin_type(plugin, type):
-    ip = request.remote_addr
-    port = request.environ.get('REMOTE_PORT')
-    
-    if not ((ip == "0.0.0.0" and port in LOG_AUTHORIZED_PORTS)):
-       return jsonify({"error": "Accesso non autorizzato"}), 403
-    
-    conn = db_pool.getconn()
-        
-    try:
-        
-        data = request.get_json(force=True, silent=True) 
-        
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            query = f"""
-                INSERT INTO logs (plugin, embeds, username, type)
-                VALUES (%s, %s, %s, %s)
-            """
-            cur.execute(query, (plugin, json.dumps(data['embeds'][0]), data['username'] if 'username' in data else None, type))
-            conn.commit()
-            
-            return jsonify({"success": "Log successfully inserted"}), 200
-        
-    except Exception as e:
-        print("Error executing query:", e)
-        return jsonify({"error": "Internal Server Error"}), 500
-    finally:
-        db_pool.putconn(conn)
+            return jsonify({"error": "Body JSON mancante"}), 400
 
-@app.route('/api/logs/allLogs', methods=['GET'])
-#@token_required
-def get_all_logs():    
-    conn = db_pool.getconn()
+        plugin = data.get("plugin")
+        plugin_type = data.get("plugin_type")
+        description = data.get("description")
+
+        if not all([plugin, plugin_type, description]):
+            return jsonify({"error": "Campi mancanti"}), 400
         
-    try:        
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            query = f"""
-                SELECT 
-                    id, 
-                    CASE 
-                        WHEN type IS NULL THEN plugin 
-                        ELSE CONCAT(CONCAT(plugin,' - '), type) 
-                    END AS plugin, 
-                    avatar_url, 
-                    embeds, 
-                    username, 
-                    type, 
-                    date
-                FROM logs
-                ORDER BY date DESC;
-            """
-            cur.execute(query)
-            rows = cur.fetchall()
-            
-            return jsonify(rows), 200
-        
+        res = supabase_insert("server_logs", {"plugin": plugin, "plugin_type": plugin_type, "description": description})
+
+        if not res:
+            return jsonify({"error": "Insert fallito"}), 500
+
+        return jsonify({"success": True}), 201
+
     except Exception as e:
-        print("Error executing query:", e)
-        return jsonify({"error": "Internal Server Error"}), 500
-    finally:
-        db_pool.putconn(conn)
+        print("🔥 Errore Supabase logs:", e)
+        return jsonify({"error": str(e)}), 500
         
+
 # --------------------------------------------------------------------------
 # DISCORD BOT
 # --------------------------------------------------------------------------
