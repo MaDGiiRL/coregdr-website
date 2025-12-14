@@ -1,9 +1,9 @@
 
 import logo from "../../assets/img/logo.png";
+import { useServerStatus } from "../../hooks/useServerStatus";
 
 export default function HeroSection() {
-  // TODO: sostituisci con API
-  const isOnline = true;
+  const { online, players, maxPlayers, loading } = useServerStatus();
 
   return (
     <section className="grid md:grid-cols-2 gap-10 items-center min-w-0">
@@ -59,14 +59,17 @@ export default function HeroSection() {
 
           <p className="text-sm text-[var(--color-text-muted)] flex items-center gap-2">
             Stato:{" "}
-            {isOnline ? (
+            {loading ? (
+              <span className="text-xs opacity-70">Verifica…</span>
+            ) : online ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                Online
+                {/* Online ({players}/{maxPlayers}) */}
+                Online ({players} attuali)
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 text-xs">
-                <span className="h-2 w-2 rounded-full bg-red-400 animate-pulse" />
+                <span className="h-2 w-2 rounded-full bg-red-400" />
                 Offline
               </span>
             )}

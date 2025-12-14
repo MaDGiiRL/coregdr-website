@@ -32,11 +32,11 @@ DB_NAME = os.environ.get("DB_NAME", "fivelives")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "admin")
 DB_PORT = os.environ.get("DB_PORT", 5432)
 
-DB_USER_FL = os.environ.get("DB_USER_FL", "root")
-DB_HOST_FL = os.environ.get("DB_HOST_FL", "localhost")
-DB_NAME_FL = os.environ.get("DB_NAME_FL", "fivelives_new")
-DB_PASSWORD_FL = os.environ.get("DB_PASSWORD_FL", "password")
-DB_PORT_FL = os.environ.get("DB_PORT_FL", 3306)
+DB_USER_FIVEM = os.environ.get("DB_USER_FIVEM", "root")
+DB_HOST_FIVEM = os.environ.get("DB_HOST_FIVEM", "localhost")
+DB_NAME_FIVEM = os.environ.get("DB_NAME_FIVEM", "coredb")
+DB_PASSWORD_FIVEM = os.environ.get("DB_PASSWORD_FIVEM", "password")
+DB_PORT_FIVEM = os.environ.get("DB_PORT_FIVEM", 3306)
 
 CLIENT_ID = os.environ.get("CLIENT_ID")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET")
@@ -45,6 +45,8 @@ DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_GUILD_ID = os.getenv("DISCORD_GUILD_ID")
 MOD_ROLE_IDS = os.getenv("MOD_ROLE_IDS", "").split(",")
 ADMIN_ROLE_IDS = os.getenv("ADMIN_ROLE_IDS", "").split(",")
+
+FIVEM_JOIN_CODE = os.getenv("FIVEM_JOIN_CODE", "")
 
 environment = os.environ.get("ENVIRONMENT")
 
@@ -85,9 +87,31 @@ def generate_jwt_token(user_id):
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
     return token if isinstance(token, str) else token.decode('utf-8')
 
+@app.route("/api/server-status")
+def server_status():
+    try:
+        r = requests.get(
+            f"https://servers-frontend.fivem.net/api/servers/single/{FIVEM_JOIN_CODE}",
+            timeout=5
+        )
+
+        if r.status_code != 200:
+            return jsonify({"online": False})
+
+        data = r.json()
+        return jsonify({
+            "online": True,
+            "players": data["Data"]["clients"],
+            "maxPlayers": data["Data"]["sv_maxclients"]
+        })
+
+    except Exception as e:
+        print("FiveM status error:", e)
+        return jsonify({"online": False})
+
 # --------------------------------------------------------------------------
 # ENDPOINT DI LOGIN
-# --------------------------------------------------------------------------   
+# -------------------------------------------------------------------------- 
 
 def getDiscordId(userId):
     conn = db_pool.getconn()
@@ -130,24 +154,6 @@ def getFivemId(userId):
         return None, 500
     finally:
         db_pool.putconn(conn)
-
-def setFivemId(userId, fivemId):
-    conn = db_pool.getconn()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:            
-            query = """
-                UPDATE utenti
-                SET fivem = %s
-                WHERE id = %s
-            """
-            cur.execute(query, (fivemId, userId, ))
-            conn.commit()
-            
-            return jsonify({"message": "Fivem settato"}), 200
-    except Exception as e:
-        return None, 500
-    finally:
-        db_pool.putconn(conn)
         
 def get_police_badge(pg_id):
     if not pg_id:
@@ -155,11 +161,11 @@ def get_police_badge(pg_id):
 
     try:
         conn = mysql.connector.connect (
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -188,11 +194,11 @@ def get_citizen_name(pg_id):
 
     try:
         conn = mysql.connector.connect (
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -222,11 +228,11 @@ def checkIfFDO(pg_id):
 
     try:
         conn = mysql.connector.connect (
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -292,11 +298,11 @@ def get_personaggi(current_user_id):
                 break
     try:
         conn = mysql.connector.connect (
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -324,11 +330,11 @@ def get_personaggi(current_user_id):
 def get_jobs():
     try:
         conn = mysql.connector.connect (
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -353,11 +359,11 @@ def get_jobs():
 def get_grades():
     try:
         conn = mysql.connector.connect (
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -537,7 +543,7 @@ def change_status(azienda_id, settimana_id):
                         SELECT %s, id
                         FROM settimane
                         WHERE id >= %s
-                        ON CONFLICT (azienda, settimana) DO NOTHING;
+                        ON CONFIVEMICT (azienda, settimana) DO NOTHING;
                     """
             cur.execute(query, (azienda_id, settimana_id))
             conn.commit()
@@ -645,11 +651,11 @@ def get_reports():
     
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -811,11 +817,11 @@ def get_report(rapporto_id):
     
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -980,11 +986,11 @@ def create_report():
     responsabile = request.json.get('responsabile')
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -1025,11 +1031,11 @@ def apply_fee():
     
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -1058,7 +1064,7 @@ def apply_fee():
                         query = """
                             INSERT INTO pene
                             VALUES (%s, %s, %s)
-                            ON CONFLICT (reportid, citizenid) DO UPDATE
+                            ON CONFIVEMICT (reportid, citizenid) DO UPDATE
                             SET articoli = EXCLUDED.articoli;
                         """
                         cur.execute(query, (reportid, citizenid, articles))
@@ -1077,7 +1083,7 @@ def apply_fee():
                     query = """
                         INSERT INTO pene
                         VALUES (%s, %s, %s)
-                        ON CONFLICT (reportid, citizenid) DO UPDATE
+                        ON CONFIVEMICT (reportid, citizenid) DO UPDATE
                         SET articoli = EXCLUDED.articoli;
                     """
                     cur.execute(query, (reportid, citizenid, articles))
@@ -1120,11 +1126,11 @@ def save_report():
     
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -1141,7 +1147,7 @@ def save_report():
             query = f"""
                 INSERT INTO rapporti
                 VALUES (%s, %s)
-                ON CONFLICT (id) DO UPDATE
+                ON CONFIVEMICT (id) DO UPDATE
                 SET articoli = EXCLUDED.articoli;
             """
             cur.execute(query, ( value['id'], value['articoli']))
@@ -1169,11 +1175,11 @@ def delete_report():
     
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -1219,11 +1225,11 @@ def get_agenti():
     try:
         # 2) Connessione al DB MySQL di FiveM
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -1255,11 +1261,11 @@ def get_agenti():
 def get_citizens():
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -1345,11 +1351,11 @@ def get_inventories():
     
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
@@ -1404,11 +1410,11 @@ def get_inventories():
 def get_vehicles():
     try:
         conn = mysql.connector.connect(
-            host=DB_HOST_FL,
-            user=DB_USER_FL,
-            database=DB_NAME_FL,
-            password=DB_PASSWORD_FL,
-            port=DB_PORT_FL,
+            host=DB_HOST_FIVEM,
+            user=DB_USER_FIVEM,
+            database=DB_NAME_FIVEM,
+            password=DB_PASSWORD_FIVEM,
+            port=DB_PORT_FIVEM,
             ssl_disabled=True,
             collation='utf8mb4_general_ci'
         )
