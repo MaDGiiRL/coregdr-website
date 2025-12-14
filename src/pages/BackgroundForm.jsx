@@ -135,20 +135,33 @@ const REQUIRED_FIELDS = [
   { key: "sesso", label: "Sesso" },
 ];
 
+// ✅ factory: oggetto sempre NUOVO (reset reale)
+const getInitialForm = () => ({
+  nome: "",
+  cognome: "",
+  sesso: "",
+  statoNascita: "",
+  etnia: "",
+  dataNascita: "",
+  storiaBreve: "",
+  condannePenali: [],
+  patologie: [{ id: 1, nome: "" }],
+  dipendenze: [{ id: 1, nome: "" }],
+  segniDistintivi: "",
+  aspettiCaratteriali: "",
+});
+
 /* -----------------------------------------------------
    CONDANNE PENALI: UN SOLO BOX CON NAVIGAZIONE
 ------------------------------------------------------*/
-
 function CondannePenaliSwitcher({ value = [], onChange }) {
   const { articoli, categorie, loading } = usePenalCode();
 
-  // tieni solo le prime 8 categorie
   const filteredCategorie = useMemo(
     () => (categorie || []).filter((c) => Number(c.id) <= 7),
     [categorie]
   );
 
-  // raggruppo articoli per categoria id
   const grouped = useMemo(() => {
     const out = {};
     for (const cat of filteredCategorie) {
@@ -169,7 +182,6 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    // se cambiano le categorie e l'indice va fuori
     if (idx > groupsArr.length - 1) setIdx(0);
   }, [groupsArr.length, idx]);
 
@@ -195,7 +207,6 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
 
   const current = groupsArr[idx];
   const selectedCount = value.length;
-
   const canAddMore = selectedCount < MAX_CONDANNE;
 
   const toggle = (nome) => {
@@ -222,7 +233,6 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[#0f1224]/70 shadow-[0_14px_50px_rgba(0,0,0,0.35)] overflow-hidden">
-      {/* header */}
       <div className="p-4 border-b border-[var(--color-border)]/70 flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
@@ -252,7 +262,6 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
           </div>
         </div>
 
-        {/* tabs indicator */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             {groupsArr.map((g, i) => (
@@ -287,7 +296,6 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
           </div>
         </div>
 
-        {/* search */}
         <div className="flex items-center gap-3">
           <input
             value={query}
@@ -313,7 +321,6 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
         )}
       </div>
 
-      {/* content */}
       <div className="p-3 md:p-4">
         <div className="max-h-[320px] overflow-y-auto rounded-xl border border-[var(--color-border)] bg-black/20">
           <table className="w-full text-sm">
@@ -381,24 +388,11 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
 /* -----------------------------------------------------
    PAGINA
 ------------------------------------------------------*/
-
 export default function BackgroundForm() {
   const { profile, session, loading } = useAuth();
 
-  const [form, setForm] = useState({
-    nome: "",
-    cognome: "",
-    sesso: "",
-    statoNascita: "",
-    etnia: "",
-    dataNascita: "",
-    storiaBreve: "",
-    condannePenali: [],
-    patologie: [{ id: 1, nome: "" }],
-    dipendenze: [{ id: 1, nome: "" }],
-    segniDistintivi: "",
-    aspettiCaratteriali: "",
-  });
+  const [form, setForm] = useState(getInitialForm); // ✅ init via factory
+  const [formResetKey, setFormResetKey] = useState(0); // ✅ reset switcher interno
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState(null);
@@ -555,6 +549,10 @@ export default function BackgroundForm() {
         color: "#e5e7eb",
         confirmButtonColor: "#22c55e",
       });
+
+      // ✅ RESET TOTALE (campi + componenti con state interno)
+      setForm(getInitialForm());
+      setFormResetKey((k) => k + 1);
     } catch (err) {
       console.error("Errore BG:", err);
       setSubmitStatus("error");
@@ -609,7 +607,6 @@ export default function BackgroundForm() {
         </p>
       </header>
 
-      {/* account card */}
       <div className="rounded-2xl border border-[var(--color-border)] bg-[#0f1224]/60 shadow-[0_14px_50px_rgba(0,0,0,0.35)] p-4 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
@@ -625,7 +622,6 @@ export default function BackgroundForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
-        {/* SECTION 1 */}
         <Card
           title="I. Dati anagrafici"
           subtitle="Informazioni base del personaggio."
@@ -684,7 +680,6 @@ export default function BackgroundForm() {
           </div>
         </Card>
 
-        {/* SECTION 2 */}
         <Card
           title="II. Storia del personaggio"
           subtitle="Racconta chi è, da dove viene e perché è qui."
@@ -698,6 +693,7 @@ export default function BackgroundForm() {
           />
 
           <CondannePenaliSwitcher
+            key={formResetKey} // ✅ reset idx/query interni
             value={form.condannePenali}
             onChange={(v) => handleChange("condannePenali", v)}
           />
@@ -729,7 +725,6 @@ export default function BackgroundForm() {
           </div>
         </Card>
 
-        {/* SECTION 3 */}
         <Card
           title="III. Caratteristiche"
           subtitle="Dettagli utili per roleplay e riconoscibilità."
@@ -752,7 +747,6 @@ export default function BackgroundForm() {
           </div>
         </Card>
 
-        {/* sticky submit bar */}
         <div className="sticky bottom-3 z-10">
           <div className="rounded-2xl border border-[var(--color-border)] bg-[#0f1224]/85 backdrop-blur px-4 py-3 shadow-[0_16px_70px_rgba(0,0,0,0.5)] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="text-xs text-[var(--color-text-muted)]">
@@ -784,9 +778,8 @@ export default function BackgroundForm() {
 }
 
 /* -----------------------------------------------------
-   UI COMPONENTS (puliti / coerenti)
+   UI COMPONENTS
 ------------------------------------------------------*/
-
 function Card({ title, subtitle, children }) {
   return (
     <section className="rounded-2xl border border-[var(--color-border)] bg-[#0f1224]/60 shadow-[0_14px_50px_rgba(0,0,0,0.35)] overflow-hidden">

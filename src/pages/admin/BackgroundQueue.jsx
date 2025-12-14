@@ -77,12 +77,8 @@ export default function BackgroundQueue() {
   const isMod = !!profile?.is_moderator && !isAdmin;
   const canModerate = isAdmin || isMod;
 
-  // ✅ mod può editare BG e job (sempre, anche approved) — come richiesto
   const canEditBgText = canModerate;
   const canEditJob = canModerate;
-
-  // ✅ approva/rifiuta: lasciamo lock dopo approved (status non modificabile)
-  // Se vuoi approvare/rifiutare sempre anche su approved dimmelo, ma di solito no.
   const canChangeStatus = canModerate;
 
   const [view, setView] = useState("backgrounds"); // "backgrounds" | "users"
@@ -90,24 +86,24 @@ export default function BackgroundQueue() {
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState(null);
 
-  // ✅ SOLO ADMIN: search & job filter
+  // admin filters
   const [q, setQ] = useState("");
   const [jobFilter, setJobFilter] = useState("ALL");
 
   const [loadingData, setLoadingData] = useState(true);
   const [updating, setUpdating] = useState(false);
 
-  // ✅ BOX UNICO commenti/motivo rifiuto — SEMPRE abilitato (anche approved)
+  // comments
   const [commentDraft, setCommentDraft] = useState("");
   const [comments, setComments] = useState([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentSending, setCommentSending] = useState(false);
 
-  // ✅ job edit UI — SEMPRE abilitato (anche approved)
+  // job edit
   const [jobDraft, setJobDraft] = useState("");
   const [jobSaving, setJobSaving] = useState(false);
 
-  // edit BG text (qui lascio lock su approved per testo BG come prima, ma se vuoi “sempre” anche per testo BG dimmelo)
+  // edit BG text
   const [editMode, setEditMode] = useState(false);
   const [editDraft, setEditDraft] = useState({
     storiaBreve: "",
@@ -116,15 +112,19 @@ export default function BackgroundQueue() {
     aspettiCaratteriali: "",
   });
 
-  // ---------- USER STATS (admin-only table) ----------
-  // Li mostro nel dettaglio BG e nel tab Utenti dentro Moderazione BG
-  const [userStats, setUserStats] = useState(new Map()); // profileId -> { hoursPlayed, lastServerJoinAt }
+  // stats
+  const [userStats, setUserStats] = useState(new Map());
   const [statsLoading, setStatsLoading] = useState(false);
 
-  // ---------- MODAL (Users->backgrounds) ----------
+  // user modal
   const [userModalOpen, setUserModalOpen] = useState(false);
-  const [modalUser, setModalUser] = useState(null); // { userId, discordName, discordId, hoursPlayed, lastServerJoinAt, job }
+  const [modalUser, setModalUser] = useState(null);
   const [modalUserBackgrounds, setModalUserBackgrounds] = useState([]);
+
+  // ✅ reject modal
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReasonDraft, setRejectReasonDraft] = useState("");
+  const [rejectSending, setRejectSending] = useState(false);
 
   const shellCard =
     "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
@@ -221,8 +221,6 @@ export default function BackgroundQueue() {
   };
 
   const loadUserStats = async () => {
-    // tabella admin-only: profile_admin_stats
-    // se un whitelister non ha accesso RLS, semplicemente non mostriamo stats (zero/—)
     setStatsLoading(true);
     try {
       const { data, error } = await supabase
@@ -230,7 +228,6 @@ export default function BackgroundQueue() {
         .select("profile_id, last_server_join_at, hours_played");
 
       if (error) {
-        // Non bloccare UI (probabilmente RLS su whitelister)
         console.debug(
           "[STATS] profile_admin_stats non leggibile:",
           error?.message
@@ -260,14 +257,18 @@ export default function BackgroundQueue() {
   }, [profile]);
 
   const selected = items.find((i) => i.id === selectedId) ?? null;
-  const isLocked = selected?.status === "approved"; // per status (non per job/commenti)
+  const isLocked = selected?.status === "approved";
 
-  // reset drafts quando cambia selection
   useEffect(() => {
     if (!selected) return;
     setCommentDraft("");
     setJobDraft(selected.job || "");
     setEditMode(false);
+
+    // ✅ reset reject modal when selection changes
+    setRejectOpen(false);
+    setRejectReasonDraft("");
+    setRejectSending(false);
   }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelect = (id) => {
@@ -275,7 +276,6 @@ export default function BackgroundQueue() {
     setEditMode(false);
   };
 
-  // ✅ Job options normalizzati + display coerente
   const jobOptions = useMemo(() => {
     const map = new Map(); // norm -> display
     items.forEach((x) => {
@@ -292,26 +292,11 @@ export default function BackgroundQueue() {
     return [{ norm: "ALL", display: "Tutti i job" }, ...list];
   }, [items]);
 
-  // ✅ DEBUG (solo admin): stampa job e filtro
-  useEffect(() => {
-    if (!isAdmin) return;
-    const allJobs = items.map((x) => x.job).filter(Boolean);
-    console.debug(
-      "[JOB DEBUG] jobFilter:",
-      jobFilter,
-      "distinct:",
-      Array.from(new Set(allJobs.map((j) => normalizeJob(j)))).slice(0, 50),
-      "sample:",
-      allJobs.slice(0, 10)
-    );
-  }, [jobFilter, items, isAdmin]);
-
   const filtered = useMemo(() => {
     const byStatus = items.filter((item) =>
       filter === "all" ? true : item.status === filter
     );
 
-    // ✅ search/job SOLO ADMIN
     if (!isAdmin) return byStatus;
 
     const qNorm = q.trim().toLowerCase();
@@ -339,7 +324,7 @@ export default function BackgroundQueue() {
     return byJob;
   }, [items, filter, isAdmin, q, jobFilter]);
 
-  // ---------------- COMMENTS (character_comments) ----------------
+  // ---------------- COMMENTS ----------------
   const loadComments = async (characterId) => {
     if (!characterId) return;
     setCommentsLoading(true);
@@ -409,8 +394,6 @@ export default function BackgroundQueue() {
       );
       return;
     }
-
-    // ✅ COMMENTI SEMPRE (anche approved) — come richiesto
 
     setCommentSending(true);
     try {
@@ -535,7 +518,8 @@ export default function BackgroundQueue() {
     await updateStatus(selected.id, "approved");
   };
 
-  const handleReject = async () => {
+  // ✅ open reject modal
+  const openRejectModal = async () => {
     if (!selected) return;
 
     if (selected.status === "approved") {
@@ -546,11 +530,25 @@ export default function BackgroundQueue() {
       return;
     }
 
-    // ✅ motivo rifiuto = BOX UNICO
-    if (!commentDraft.trim()) {
+    setRejectReasonDraft("");
+    setRejectOpen(true);
+  };
+
+  const closeRejectModal = () => {
+    if (rejectSending) return;
+    setRejectOpen(false);
+    setRejectReasonDraft("");
+  };
+
+  const submitReject = async () => {
+    if (!selected) return;
+    if (selected.status === "approved") return;
+
+    const reason = rejectReasonDraft.trim();
+    if (!reason) {
       await alertWarning(
         "Motivazione mancante",
-        "Scrivi nel box commenti la motivazione del rifiuto."
+        "Scrivi il motivo del rifiuto."
       );
       return;
     }
@@ -561,23 +559,60 @@ export default function BackgroundQueue() {
       confirmText: "Sì, rifiuta",
       cancelText: "Annulla",
     });
-
     if (!ok) return;
 
-    const reason = commentDraft.trim();
+    setRejectSending(true);
+    try {
+      // 1) status + rejection_reason
+      await updateStatus(selected.id, "rejected", reason);
 
-    // 1) rifiuta
-    await updateStatus(selected.id, "rejected", reason);
+      // 2) salva anche come commento storico
+      const payload = {
+        character_id: selected.id,
+        author_id: profile.id,
+        comment: reason,
+        author_role: isAdmin ? "ADMIN" : "WHITELISTER",
+      };
 
-    // 2) salva anche come commento (storico) — commenti SEMPRE consentiti
-    await sendComment();
+      const { data, error } = await supabase
+        .from("character_comments")
+        .insert(payload)
+        .select("id, comment, created_at")
+        .single();
+
+      if (error) {
+        console.error(error);
+        toast("warning", "Rifiutato, ma commento non salvato");
+      } else {
+        setComments((prev) => [
+          ...prev,
+          {
+            id: data.id,
+            message: data.comment,
+            createdAt: data.created_at,
+            authorId: profile.id,
+            authorName: profile.discord_username ?? "Tu",
+            authorRole: isAdmin ? "Admin" : "Whitelister",
+          },
+        ]);
+      }
+
+      setRejectOpen(false);
+      setRejectReasonDraft("");
+      toast("success", "Background rifiutato");
+    } finally {
+      setRejectSending(false);
+    }
+  };
+
+  const handleReject = async () => {
+    await openRejectModal();
   };
 
   // ---------------- EDIT BG TEXT ----------------
   const startEdit = async () => {
     if (!selected || !canEditBgText) return;
 
-    // testo BG: lasciamo lock su approved (come avevi prima)
     if (selected.status === "approved") {
       await alertInfo(
         "Background bloccato",
@@ -684,7 +719,7 @@ export default function BackgroundQueue() {
     }
   };
 
-  // ---------------- JOB EDIT (admin + mod) — SEMPRE ----------------
+  // ---------------- JOB EDIT ----------------
   const saveJob = async () => {
     if (!selected || !canEditJob) return;
 
@@ -732,16 +767,15 @@ export default function BackgroundQueue() {
     await saveJob();
   };
 
-  // ---------------- USERS VIEW (inside moderation) ----------------
+  // ---------------- USERS VIEW ----------------
   const usersInQueue = useMemo(() => {
-    const map = new Map(); // userId -> aggregated
+    const map = new Map();
     items.forEach((it) => {
       if (!map.has(it.userId)) {
         map.set(it.userId, {
           userId: it.userId,
           discordName: it.discordName,
           discordId: it.discordId,
-          // job: prendiamo l’ultimo job disponibile del suo background più recente (items è già ordinato desc)
           job: it.job || "",
           backgroundsCount: 0,
           latestStatus: it.status,
@@ -753,7 +787,6 @@ export default function BackgroundQueue() {
     });
 
     const list = Array.from(map.values());
-    // sort: più recenti in alto
     list.sort(
       (a, b) => new Date(b.latestCreatedAt) - new Date(a.latestCreatedAt)
     );
@@ -838,7 +871,6 @@ export default function BackgroundQueue() {
           </motion.button>
         </div>
 
-        {/* SUB-TABS: Background / Utenti */}
         <div className="flex flex-wrap gap-2">
           {[
             { id: "backgrounds", label: "Background", icon: Info },
@@ -871,7 +903,6 @@ export default function BackgroundQueue() {
           </span>
         </div>
 
-        {/* Filtri stato (solo view backgrounds) */}
         {view === "backgrounds" && (
           <div className="flex flex-wrap gap-2 pt-1">
             {[
@@ -900,7 +931,6 @@ export default function BackgroundQueue() {
           </div>
         )}
 
-        {/* ✅ SOLO ADMIN: search + job filter + debug pill (solo view backgrounds) */}
         {view === "backgrounds" && isAdmin && (
           <div className="pt-2 flex flex-col md:flex-row gap-2">
             <div className="flex-1 relative">
@@ -927,15 +957,10 @@ export default function BackgroundQueue() {
                 ))}
               </select>
             </div>
-
-            <div className="self-center text-[11px] px-3 py-1 rounded-full border border-[var(--color-border)] bg-black/20 text-[var(--color-text-muted)]">
-              JobFilter: <span className="font-mono">{jobFilter}</span>
-            </div>
           </div>
         )}
       </header>
 
-      {/* LOADING */}
       {loadingData ? (
         <div
           className={`${softPanel} px-4 py-3 text-xs text-[var(--color-text-muted)]`}
@@ -944,7 +969,6 @@ export default function BackgroundQueue() {
         </div>
       ) : (
         <>
-          {/* VIEW: USERS */}
           {view === "users" && (
             <div className={`${shellCard} p-4 md:p-5 space-y-3`}>
               <div className="flex items-center justify-between">
@@ -1029,10 +1053,8 @@ export default function BackgroundQueue() {
             </div>
           )}
 
-          {/* VIEW: BACKGROUNDS */}
           {view === "backgrounds" && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Lista */}
               <aside className="lg:col-span-5 xl:col-span-4">
                 <div className={`${shellCard} p-3 space-y-3`}>
                   <div className="max-h-[540px] overflow-y-auto space-y-2 pt-1">
@@ -1099,7 +1121,6 @@ export default function BackgroundQueue() {
                 </div>
               </aside>
 
-              {/* Dettaglio */}
               <main className="lg:col-span-7 xl:col-span-8">
                 <AnimatePresence mode="wait">
                   {selected ? (
@@ -1118,7 +1139,6 @@ export default function BackgroundQueue() {
                       }}
                       className={`${shellCard} p-4 md:p-5 space-y-4`}
                     >
-                      {/* Header */}
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
@@ -1128,7 +1148,6 @@ export default function BackgroundQueue() {
                             {selected.nome} {selected.cognome}
                           </h2>
 
-                          {/* Discord + Job + Access info */}
                           <p className="text-xs text-[var(--color-text-muted)]">
                             <span className="truncate">
                               {selected.discordName} • ID:{" "}
@@ -1200,7 +1219,6 @@ export default function BackgroundQueue() {
                         </div>
                       </div>
 
-                      {/* Banner lock (solo stato) */}
                       {isLocked && (
                         <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm">
                           <div className="flex items-start gap-2">
@@ -1218,7 +1236,7 @@ export default function BackgroundQueue() {
                         </div>
                       )}
 
-                      {/* ✅ JOB EDIT (admin + mod) — SEMPRE */}
+                      {/* JOB */}
                       <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
                         <h3 className="font-semibold text-sm md:text-base flex items-center gap-2">
                           <Briefcase className="w-4 h-4 text-[var(--color-text-muted)]" />
@@ -1259,22 +1277,9 @@ export default function BackgroundQueue() {
                             </motion.button>
                           </div>
                         </div>
-
-                        {/* Mini debug: raw + norm */}
-                        <p className="text-[11px] text-[var(--color-text-muted)]">
-                          Debug: raw=
-                          <span className="font-mono">
-                            {selected.job || "—"}
-                          </span>{" "}
-                          • norm=
-                          <span className="font-mono">
-                            {" "}
-                            {normalizeJob(selected.job)}
-                          </span>
-                        </p>
                       </section>
 
-                      {/* Sezione testo BG */}
+                      {/* STORIA */}
                       <div className="space-y-4 text-xs md:text-sm">
                         <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
                           <h3 className="font-semibold text-sm md:text-base flex items-center gap-2">
@@ -1307,7 +1312,7 @@ export default function BackgroundQueue() {
                           </div>
                         </section>
 
-                        {/* ✅ BOX COMMENTI UNICO — SEMPRE + 4 visibili poi scroll */}
+                        {/* COMMENTI */}
                         <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-3">
                           <div className="flex items-center justify-between">
                             <h3 className="font-semibold text-sm md:text-base flex items-center gap-2">
@@ -1321,7 +1326,6 @@ export default function BackgroundQueue() {
                             </span>
                           </div>
 
-                          {/* 4 commenti visibili ≈ max-h, poi scroll */}
                           <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1">
                             {comments.map((c) => (
                               <div
@@ -1346,7 +1350,6 @@ export default function BackgroundQueue() {
                                   </span>
                                 </div>
 
-                                {/* testo con altezza controllata per non “rompere” le 4 righe */}
                                 <div className="mt-1 max-h-[64px] overflow-y-auto">
                                   <p className="text-xs md:text-sm text-[var(--color-text)] whitespace-pre-line leading-relaxed">
                                     {c.message}
@@ -1365,7 +1368,7 @@ export default function BackgroundQueue() {
                           <textarea
                             disabled={commentSending || updating}
                             className="w-full min-h-[90px] rounded-2xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y disabled:opacity-50"
-                            placeholder="Scrivi un commento (o la motivazione del rifiuto)..."
+                            placeholder="Scrivi un commento..."
                             value={commentDraft}
                             onChange={(e) => setCommentDraft(e.target.value)}
                           />
@@ -1385,7 +1388,7 @@ export default function BackgroundQueue() {
                         </section>
                       </div>
 
-                      {/* Azioni */}
+                      {/* AZIONI */}
                       <div className="mt-2 border-t border-[var(--color-border)] pt-4 space-y-3">
                         {!editMode ? (
                           <div className="flex flex-wrap gap-2 text-xs md:text-sm">
@@ -1468,7 +1471,109 @@ export default function BackgroundQueue() {
         </>
       )}
 
-      {/* ---------- USER MODAL ---------- */}
+      {/* ✅ REJECT MODAL */}
+      <AnimatePresence>
+        {rejectOpen && selected && (
+          <motion.div
+            key="rejectModal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: { duration: 0.15 } }}
+            exit={{ opacity: 0, transition: { duration: 0.12 } }}
+            className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 md:p-6"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) closeRejectModal();
+            }}
+          >
+            <motion.div
+              initial={{
+                opacity: 0,
+                y: reduce ? 0 : 12,
+                scale: reduce ? 1 : 0.98,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                transition: { duration: 0.18 },
+              }}
+              exit={{
+                opacity: 0,
+                y: reduce ? 0 : 10,
+                scale: reduce ? 1 : 0.98,
+                transition: { duration: 0.12 },
+              }}
+              className={`w-full max-w-lg ${shellCard} p-4 md:p-5 space-y-4`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                    Rifiuto background
+                  </p>
+                  <h3 className="text-lg font-semibold truncate">
+                    {selected.nome} {selected.cognome}
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Inserisci il motivo del rifiuto (verrà salvato anche nei
+                    commenti).
+                  </p>
+                </div>
+
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: reduce ? 1 : 0.97 }}
+                  onClick={closeRejectModal}
+                  disabled={rejectSending}
+                  className="px-3 py-2 rounded-full border border-[var(--color-border)] bg-black/20 hover:bg-white/5 inline-flex items-center gap-2 text-xs disabled:opacity-50"
+                >
+                  <CloseIcon className="w-4 h-4" />
+                  Chiudi
+                </motion.button>
+              </div>
+
+              <textarea
+                value={rejectReasonDraft}
+                onChange={(e) => setRejectReasonDraft(e.target.value)}
+                disabled={rejectSending}
+                placeholder="Scrivi qui la motivazione del rifiuto…"
+                className="w-full min-h-[120px] rounded-2xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y disabled:opacity-50"
+                maxLength={500}
+              />
+
+              <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
+                <span>
+                  {rejectReasonDraft.trim() ? "Ok" : "Motivo obbligatorio"}
+                </span>
+                <span>{rejectReasonDraft.length}/500</span>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: reduce ? 1 : 0.97 }}
+                  onClick={closeRejectModal}
+                  disabled={rejectSending}
+                  className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 disabled:opacity-50 inline-flex items-center gap-2 text-xs"
+                >
+                  Annulla
+                </motion.button>
+
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: reduce ? 1 : 0.97 }}
+                  onClick={submitReject}
+                  disabled={rejectSending || !rejectReasonDraft.trim()}
+                  className="px-4 py-2 rounded-full font-semibold bg-red-500/90 text-white shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2 text-xs"
+                >
+                  <XCircle className="w-4 h-4" />
+                  {rejectSending ? "Invio..." : "Invia rifiuto"}
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* USER MODAL */}
       <AnimatePresence>
         {userModalOpen && modalUser && (
           <motion.div
@@ -1515,25 +1620,6 @@ export default function BackgroundQueue() {
                     Job:{" "}
                     <span className="text-white/80 font-semibold">
                       {modalUser.job || "—"}
-                    </span>
-                  </p>
-                  <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                    Ultimo accesso:{" "}
-                    <span className="text-white/80">
-                      {modalUser.lastServerJoinAt
-                        ? new Date(modalUser.lastServerJoinAt).toLocaleString(
-                            "it-IT",
-                            {
-                              dateStyle: "short",
-                              timeStyle: "short",
-                            }
-                          )
-                        : "—"}
-                    </span>
-                    <span className="mx-2 opacity-50">•</span>
-                    Ore:{" "}
-                    <span className="text-white/80 font-semibold">
-                      {Number(modalUser.hoursPlayed ?? 0).toFixed(1)}
                     </span>
                   </p>
                 </div>
