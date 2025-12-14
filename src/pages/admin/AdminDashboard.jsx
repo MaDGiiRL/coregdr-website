@@ -633,20 +633,6 @@ export default function AdminDashboard() {
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <span
-                              className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
-                                u.bgStatus === "none" ? "none" : u.bgStatus
-                              )}`}
-                            >
-                              {u.bgStatus === "none"
-                                ? "Nessun BG"
-                                : u.bgStatus === "pending"
-                                ? "In attesa"
-                                : u.bgStatus === "approved"
-                                ? "Approvato"
-                                : "Rifiutato"}
-                            </span>
-
                             <RoleBadge role={roleLabel(u)} />
                           </div>
                         </div>
@@ -845,7 +831,6 @@ export default function AdminDashboard() {
                           </p>
 
                           <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-
                             Ultimo accesso:{" "}
                             <span className="text-white/80">
                               {u.lastServerJoinAt
@@ -879,19 +864,6 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 justify-end">
-                          <span
-                            className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
-                              u.bgStatus === "none" ? "none" : u.bgStatus
-                            )}`}
-                          >
-                            {u.bgStatus === "none"
-                              ? "Nessun BG"
-                              : u.bgStatus === "pending"
-                              ? "In attesa"
-                              : u.bgStatus === "approved"
-                              ? "Approvato"
-                              : "Rifiutato"}
-                          </span>
                           <RoleBadge role={currentRole} />
                         </div>
                       </div>
