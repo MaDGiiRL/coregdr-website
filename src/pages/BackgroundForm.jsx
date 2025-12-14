@@ -144,7 +144,7 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
 
   // tieni solo le prime 8 categorie
   const filteredCategorie = useMemo(
-    () => (categorie || []).filter((c) => Number(c.id) <= 8),
+    () => (categorie || []).filter((c) => Number(c.id) <= 7),
     [categorie]
   );
 

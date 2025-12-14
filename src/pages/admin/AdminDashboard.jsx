@@ -236,7 +236,7 @@ export default function AdminDashboard() {
 
       const { data: serverLogsData, error: serverLogsError } = await supabase
         .from("server_logs")
-        .select("id, plugin, type, description, created_at")
+        .select("id, plugin, plugin_type, description, created_at")
         .order("created_at", { ascending: false });
 
       if (serverLogsError) {
@@ -247,7 +247,7 @@ export default function AdminDashboard() {
           (serverLogsData || []).map((l) => ({
             id: l.id,
             plugin: l.plugin ?? "unknown",
-            type: l.type ?? "GENERIC",
+            plugin_type: l.plugin_type ?? "GENERIC",
             description: l.description ?? "",
             createdAt: l.created_at,
           }))
