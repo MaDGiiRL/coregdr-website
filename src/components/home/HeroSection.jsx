@@ -1,4 +1,3 @@
-
 import logo from "../../assets/img/logo.png";
 import { useServerStatus } from "../../hooks/useServerStatus";
 
@@ -13,8 +12,7 @@ export default function HeroSection() {
         </p>
 
         <h1 className="text-3xl md:text-5xl font-semibold leading-tight">
-          Benvenuto in{" "}
-          <span className="text-[var(--violet-light)]">Core Roleplay</span>
+          Benvenuto in <span className="text-[var(--violet-light)]">Core</span>
         </h1>
 
         <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-xl">
@@ -25,10 +23,10 @@ export default function HeroSection() {
 
         <div className="flex flex-wrap gap-3">
           <a
-            href="https://discord.gg/AgQbbnzwMc"
+            href="https://www.youtube.com/watch?v=xJ5QUzcagk8"
             className="px-5 py-2.5 rounded-full text-sm md:text-base font-medium bg-[var(--violet)] text-white shadow-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-transform transition-shadow"
           >
-            Entra su Discord
+            Ultimo Spoiler
           </a>
         </div>
 
@@ -37,16 +35,15 @@ export default function HeroSection() {
             Whitelist
           </span>
           <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10">
-            Staff attivo
+            Server a orari
           </span>
           <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10">
-            Economia bilanciata
+            Economia progressiva
           </span>
         </div>
       </div>
 
       <div className="relative min-w-0 overflow-hidden">
-
         {/* LOGO ANIMATO 2D */}
         <img
           src={logo}
@@ -65,7 +62,8 @@ export default function HeroSection() {
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
                 {/* Online ({players}/{maxPlayers}) */}
-                Online ({players} attuali)
+                {/* Online ({players} attuali) */}
+                Online
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 text-xs">
@@ -77,12 +75,14 @@ export default function HeroSection() {
 
           <div className="grid grid-cols-2 gap-3 text-xs text-[var(--color-text-muted)] min-w-0">
             <div className="p-3 rounded-2xl bg-white/5 border border-white/10 min-w-0">
-              <p className="font-semibold text-[var(--color-text)]">Economy</p>
-              <p>Realistica e progressiva</p>
+              <p className="font-semibold text-[var(--color-text)]">Orari</p>
+              <p>15:00 - 03:00</p>
             </div>
             <div className="p-3 rounded-2xl bg-white/5 border border-white/10 min-w-0">
-              <p className="font-semibold text-[var(--color-text)]">RP</p>
-              <p>Serio, character-focused</p>
+              <p className="font-semibold text-[var(--color-text)]">
+                Whitelist
+              </p>
+              <p>Coming soon..</p>
             </div>
           </div>
         </div>

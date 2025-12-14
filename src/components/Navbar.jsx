@@ -239,11 +239,11 @@ export default function Navbar() {
         >
           <img
             src={logo}
-            alt="Core Roleplay logo"
+            alt="Core GDR logo"
             className="h-9 w-9 rounded-2xl object-cover shadow-md"
           />
           <div className="leading-tight">
-            <p className="font-semibold text-sm md:text-base">Core Roleplay</p>
+            <p className="font-semibold text-sm md:text-base">Core GDR</p>
             <p className="text-[10px] md:text-xs text-[var(--color-text-muted)]">
               FiveM Server
             </p>
@@ -549,7 +549,7 @@ export default function Navbar() {
                 <div className="flex items-center gap-2">
                   <img src={logo} alt="logo" className="h-9 w-9 rounded-2xl" />
                   <div className="leading-tight">
-                    <p className="font-semibold">Core Roleplay</p>
+                    <p className="font-semibold">Core GDR</p>
                     <p className="text-[11px] text-[var(--color-text-muted)]">
                       Menu
                     </p>

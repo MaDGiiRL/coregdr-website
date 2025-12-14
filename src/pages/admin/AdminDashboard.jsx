@@ -1,3 +1,5 @@
+// nei background l'admin deve avere una sezione con le note inotlre dobbiamo fare una select per tenere aggiornnato il gruppo d'appartene3nza tipo (faccio parte del gang gamilies > filtro per gang families) + ultimo accesso al server e ore spese in gioco nel server + Mod -> Whitelister / togli possiobilità di modifica ruoli da sito / in moderazione bg solo admin deve poter fare ricerca input tesuale + per job
+
 import { useEffect, useMemo, useState } from "react";
 import { useDiscordRoles } from "../../hooks/useDiscordRoles";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
@@ -40,7 +42,6 @@ const statusPill = (status) => {
   }
 };
 
-// ✅ NEW: badge ruoli (più “premium”)
 const rolePill = (role) => {
   switch (role) {
     case "Admin":
@@ -52,7 +53,6 @@ const rolePill = (role) => {
   }
 };
 
-// ✅ NEW: componente badge ruoli con icona
 const RoleBadge = ({ role }) => {
   const Icon = role === "Admin" ? Crown : role === "Mod" ? BadgeCheck : UserCog;
 
@@ -76,7 +76,7 @@ export default function AdminDashboard() {
 
   const { isAdmin, isMod, isStaff, loading: roleLoading } = useDiscordRoles(
     discordId ? [discordId] : [],
-    [discordId] // <--- passiamo discordId come dipendenza al custom hook
+    [discordId]
   );
 
   const TABS = useMemo(

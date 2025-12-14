@@ -41,16 +41,13 @@ export default function JoinDiscordSection() {
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mt-3">
           <a
-            href="https://discord.gg/tuo-invite"
+            href="https://discord.gg/AgQbbnzwMc"
             target="_blank"
             rel="noreferrer"
             className="px-6 py-3 rounded-full font-medium bg-[var(--blue)] text-[#050816] shadow-lg hover:brightness-110 hover:-translate-y-0.5 active:translate-y-0 transition-transform transition-shadow text-sm md:text-base"
           >
             Unisciti al Discord
           </a>
-          <p className="text-[11px] text-[var(--color-text-muted)]">
-            Richiesto per supporto, whitelist e ticket.
-          </p>
         </div>
       </div>
 
