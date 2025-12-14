@@ -51,7 +51,6 @@ export const ListItemSchema = z.object({
     .max(120, "Massimo 120 caratteri")
     .optional()
     .or(z.literal("")),
-  inCura: z.boolean(),
 });
 
 const CondannePenaliTable = ({ value = [], onChange }) => {
@@ -215,8 +214,8 @@ export default function BackgroundForm() {
     dataNascita: "",
     storiaBreve: "",
     condannePenali: [],
-    patologie: [{ id: 1, nome: "", inCura: false }],
-    dipendenze: [{ id: 1, nome: "", inCura: false }],
+    patologie: [{ id: 1, nome: "" }],
+    dipendenze: [{ id: 1, nome: "" }],
     segniDistintivi: "",
     aspettiCaratteriali: "",
   });
@@ -246,7 +245,7 @@ export default function BackgroundForm() {
 
       return {
         ...prev,
-        [field]: [...prev[field], { id: nextId, nome: "", inCura: false }],
+        [field]: [...prev[field], { id: nextId, nome: "" }],
       };
     });
   };
@@ -497,7 +496,7 @@ export default function BackgroundForm() {
           </div>
 
           <DynamicList
-            title="Patologie"
+            title="Patologie (In cura)"
             items={form.patologie}
             onAdd={() => handleArrayAdd("patologie")}
             onRemove={(id) => handleArrayRemove("patologie", id)}
@@ -507,7 +506,7 @@ export default function BackgroundForm() {
           />
 
           <DynamicList
-            title="Dipendenze"
+            title="Dipendenze (Attuali)"
             items={form.dipendenze}
             onAdd={() => handleArrayAdd("dipendenze")}
             onRemove={(id) => handleArrayRemove("dipendenze", id)}
@@ -640,15 +639,6 @@ function DynamicList({ title, items, onAdd, onRemove, onChange }) {
             onChange={(e) => onChange(item.id, "nome", e.target.value)}
             className="flex-1 rounded-xl px-3 py-2 bg-[#111326] border border-[var(--color-border)] text-sm"
           />
-
-          <label className="text-[11px] flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={item.inCura}
-              onChange={(e) => onChange(item.id, "inCura", e.target.checked)}
-            />
-            in cura
-          </label>
 
           {items.length > 1 && (
             <button

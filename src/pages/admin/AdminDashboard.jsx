@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useDiscordRoles } from "../../hooks/useDiscordRoles";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   LayoutDashboard,
@@ -71,9 +72,12 @@ export default function AdminDashboard() {
   const { profile, loading: authLoading } = useAuth();
   const reduce = useReducedMotion();
 
-  const isAdmin = !!profile?.is_admin;
-  const isMod = !!profile?.is_moderator;
-  const isStaff = isAdmin || isMod;
+  const discordId = profile?.discord_id;
+
+  const { isAdmin, isMod, isStaff, loading: roleLoading } = useDiscordRoles(
+    discordId ? [discordId] : [],
+    [discordId] // <--- passiamo discordId come dipendenza al custom hook
+  );
 
   const TABS = useMemo(
     () => [
@@ -205,7 +209,7 @@ export default function AdminDashboard() {
             discordName: u.discord_username ?? "Senza nome",
             joinedAt: u.created_at,
             bgStatus: latestBgByUser.get(u.id) ?? "none",
-            isModerator: !!u.is_moderator,
+            isMod: !!u.is_moderator,
             isAdmin: !!u.is_admin,
           }))
         );
@@ -290,7 +294,7 @@ export default function AdminDashboard() {
   );
 
   const roleLabel = (u) =>
-    u.isAdmin ? "Admin" : u.isModerator ? "Mod" : "User";
+    u.isAdmin ? "Admin" : u.isMod ? "Mod" : "User";
 
   const setUserRole = async (userId, nextRole) => {
     if (!isAdmin) return;
@@ -343,7 +347,7 @@ export default function AdminDashboard() {
             ? {
                 ...u,
                 isAdmin: !!patch.is_admin,
-                isModerator: !!patch.is_moderator,
+                isMod: !!patch.is_moderator,
               }
             : u
         )
@@ -380,7 +384,7 @@ export default function AdminDashboard() {
   };
 
   // ---------- GATES ----------
-  if (authLoading) {
+  if (authLoading || roleLoading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">Caricamento…</p>
     );
@@ -395,6 +399,7 @@ export default function AdminDashboard() {
   }
 
   if (!isStaff) {
+    console.log("ISADMIN", isAdmin)
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
         Non hai i permessi per accedere a questa pagina.

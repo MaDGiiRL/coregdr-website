@@ -77,6 +77,7 @@ export default function Navbar() {
 
   const mobileRef = useRef(null);
   const userRef = useRef(null);
+  const notifRef = useRef(null);
 
   const user = session?.user || null;
   const isLoggedIn = !!user;
@@ -117,6 +118,7 @@ export default function Navbar() {
     };
 
     const onClick = (e) => {
+      // mobile drawer click-outside
       if (
         mobileOpen &&
         mobileRef.current &&
@@ -124,8 +126,19 @@ export default function Navbar() {
       ) {
         setMobileOpen(false);
       }
+
+      // user dropdown click-outside
       if (userOpen && userRef.current && !userRef.current.contains(e.target)) {
         setUserOpen(false);
+      }
+
+      // notif panel click-outside (nuovo)
+      if (
+        notifOpen &&
+        notifRef.current &&
+        !notifRef.current.contains(e.target)
+      ) {
+        setNotifOpen(false);
       }
     };
 
@@ -135,7 +148,7 @@ export default function Navbar() {
       document.removeEventListener("keydown", onDown);
       document.removeEventListener("mousedown", onClick);
     };
-  }, [mobileOpen, userOpen]);
+  }, [mobileOpen, userOpen, notifOpen]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -278,7 +291,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => {
-                setNotifOpen(true);
+                setNotifOpen((p) => !p);
                 setUserOpen(false);
               }}
               className="relative hidden md:inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 hover:bg-[var(--color-surface)] transition"
@@ -370,7 +383,8 @@ export default function Navbar() {
                           Dashboard
                         </button>
 
-                        {(isAdmin || isMod) && (
+                        {/* ✅ SOLO MOD */}
+                        {isMod && (
                           <button
                             type="button"
                             onClick={() => closeAllAndGo("/admin/backgrounds")}
@@ -381,6 +395,7 @@ export default function Navbar() {
                           </button>
                         )}
 
+                        {/* ✅ SOLO ADMIN */}
                         {isAdmin && (
                           <button
                             type="button"
@@ -423,6 +438,7 @@ export default function Navbar() {
               onClick={() => setNotifOpen(false)}
             />
             <motion.div
+              ref={notifRef}
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{
                 opacity: 1,
@@ -646,7 +662,8 @@ export default function Navbar() {
                       Dashboard
                     </button>
 
-                    {(isAdmin || isMod) && (
+                    {/* ✅ SOLO MOD */}
+                    {isMod && (
                       <button
                         type="button"
                         onClick={() => closeAllAndGo("/admin/backgrounds")}
@@ -657,6 +674,7 @@ export default function Navbar() {
                       </button>
                     )}
 
+                    {/* ✅ SOLO ADMIN */}
                     {isAdmin && (
                       <button
                         type="button"
