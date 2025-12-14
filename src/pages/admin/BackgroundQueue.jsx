@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useDiscordRoles } from "../../hooks/useDiscordRoles";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
