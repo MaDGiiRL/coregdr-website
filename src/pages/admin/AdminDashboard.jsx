@@ -421,7 +421,7 @@ export default function AdminDashboard() {
           .from("logs")
           .select("id, type, message, created_at")
           .order("created_at", { ascending: false })
-          .limit(250);
+          .limit(1000)
 
         if (!alive) return;
         if (!error) {

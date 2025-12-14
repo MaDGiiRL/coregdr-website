@@ -50,12 +50,10 @@ export const usePenalCode = () => {
       setErrorMsg("");
 
       try {
-        const base =
-          import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:5000";
 
         const [resArticoli, resCategorie] = await Promise.all([
-          fetch(`${base}/api/procura/articoli`, { signal: ctrl.signal }),
-          fetch(`${base}/api/procura/articoli/categorie`, {
+          fetch(`/api/procura/articoli`, { signal: ctrl.signal }),
+          fetch(`/api/procura/articoli/categorie`, {
             signal: ctrl.signal,
           }),
         ]);
