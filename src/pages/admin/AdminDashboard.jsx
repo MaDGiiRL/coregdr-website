@@ -1,5 +1,3 @@
-// nei background l'admin deve avere una sezione con le note inotlre dobbiamo fare una select per tenere aggiornnato il gruppo d'appartene3nza tipo (faccio parte del gang gamilies > filtro per gang families) + ultimo accesso al server e ore spese in gioco nel server + Mod -> Whitelister / togli possiobilità di modifica ruoli da sito / in moderazione bg solo admin deve poter fare ricerca input tesuale + per job
-
 import { useEffect, useMemo, useState } from "react";
 import { useDiscordRoles } from "../../hooks/useDiscordRoles";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
@@ -14,20 +12,19 @@ import {
   BadgeCheck,
   UserCog,
   Server,
+  Briefcase,
+  Search,
 } from "lucide-react";
 
 import BackgroundQueue from "./BackgroundQueue";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
-import {
-  alertError,
-  alertWarning,
-  confirmAction,
-  toast,
-} from "../../lib/alerts";
+import { alertError } from "../../lib/alerts";
 
 const PAGE_SIZE_OVERVIEW = 10;
 const PAGE_SIZE_FULL = 30;
+
+const normalizeJob = (job) => (job || "").toString().trim().toLowerCase();
 
 const statusPill = (status) => {
   switch (status) {
@@ -46,7 +43,7 @@ const rolePill = (role) => {
   switch (role) {
     case "Admin":
       return "bg-gradient-to-r from-[var(--violet)]/25 to-fuchsia-400/10 text-white border-[var(--violet-soft)] shadow-[0_0_0_1px_rgba(124,92,255,0.25)]";
-    case "Mod":
+    case "Whitelister":
       return "bg-gradient-to-r from-amber-400/20 to-amber-400/5 text-amber-200 border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.18)]";
     default:
       return "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]";
@@ -54,7 +51,8 @@ const rolePill = (role) => {
 };
 
 const RoleBadge = ({ role }) => {
-  const Icon = role === "Admin" ? Crown : role === "Mod" ? BadgeCheck : UserCog;
+  const Icon =
+    role === "Admin" ? Crown : role === "Whitelister" ? BadgeCheck : UserCog;
 
   return (
     <span
@@ -74,18 +72,19 @@ export default function AdminDashboard() {
 
   const discordId = profile?.discord_id;
 
-  const { isAdmin, isMod, isStaff, loading: roleLoading } = useDiscordRoles(
-    discordId ? [discordId] : [],
-    [discordId]
-  );
+  const {
+    isAdmin,
+    isStaff,
+    loading: roleLoading,
+  } = useDiscordRoles(discordId ? [discordId] : [], [discordId]);
 
   const TABS = useMemo(
     () => [
       { id: "overview", label: "Panoramica", icon: LayoutDashboard },
       { id: "backgrounds", label: "Background", icon: FileText },
-      { id: "users", label: "Utenti", icon: UsersIcon },
-      { id: "logs", label: "Log", icon: Activity },
-      { id: "serverLogs", label: "Log server", icon: Server },
+      { id: "users", label: "Utenti", icon: UsersIcon }, // admin
+      { id: "logs", label: "Log", icon: Activity }, // admin
+      { id: "serverLogs", label: "Log server", icon: Server }, // admin
     ],
     []
   );
@@ -103,9 +102,7 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [logs, setLogs] = useState([]);
   const [serverLogs, setServerLogs] = useState([]);
-
   const [loadingData, setLoadingData] = useState(true);
-  const [updatingRoleIds, setUpdatingRoleIds] = useState([]);
 
   const [overviewUsersPage, setOverviewUsersPage] = useState(1);
   const [overviewLogsPage, setOverviewLogsPage] = useState(1);
@@ -113,6 +110,10 @@ export default function AdminDashboard() {
   const [usersPage, setUsersPage] = useState(1);
   const [logsPage, setLogsPage] = useState(1);
   const [serverLogsPage, setServerLogsPage] = useState(1);
+
+  // ✅ filtro JOB (al posto del filtro gruppo)
+  const [jobFilter, setJobFilter] = useState("ALL");
+  const [userSearch, setUserSearch] = useState("");
 
   const shellCard =
     "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
@@ -131,6 +132,7 @@ export default function AdminDashboard() {
     return `${start}–${end} di ${total}`;
   };
 
+  // ✅ admin vede tutti i tab, whitelister solo backgrounds
   const visibleTabs = isAdmin
     ? TABS
     : TABS.filter((t) => t.id === "backgrounds");
@@ -142,7 +144,7 @@ export default function AdminDashboard() {
   const fetchData = async () => {
     if (!profile) return;
 
-    // i mod vedono solo backgrounds
+    // whitelister vede solo backgrounds
     if (!isAdmin) {
       setLoadingData(false);
       return;
@@ -181,37 +183,74 @@ export default function AdminDashboard() {
         rejectedBackgrounds: rejectedBgRes.count ?? 0,
       });
 
+      // ✅ users base
       const { data: usersData, error: usersError } = await supabase
         .from("profiles")
-        .select("id, discord_username, created_at, is_moderator, is_admin")
+        .select(
+          `
+          id,
+          discord_username,
+          created_at,
+          is_moderator,
+          is_admin
+        `
+        )
         .order("created_at", { ascending: false });
 
       if (usersError) {
         console.error(usersError);
         await alertError("Errore", "Impossibile caricare la lista utenti.");
       } else {
+        // ✅ per collegare "Gruppo" al Job:
+        // prendiamo il job più recente per user dalla tabella characters
         const { data: charsData, error: charsErr } = await supabase
           .from("characters")
-          .select("id, user_id, status, created_at")
+          .select("id, user_id, status, created_at, job")
           .order("created_at", { ascending: false });
 
         if (charsErr) console.error(charsErr);
 
         const latestBgByUser = new Map();
+        const latestJobByUser = new Map();
+
         (charsData || []).forEach((ch) => {
           if (!latestBgByUser.has(ch.user_id))
             latestBgByUser.set(ch.user_id, ch.status);
+          if (!latestJobByUser.has(ch.user_id))
+            latestJobByUser.set(ch.user_id, (ch.job ?? "").trim());
         });
 
+        // ✅ accessi/ore (admin-only)
+        const { data: statsData, error: statsErr } = await supabase
+          .from("profile_admin_stats")
+          .select("profile_id, last_server_join_at, hours_played");
+
+        const statsMap = new Map();
+        if (!statsErr) {
+          (statsData || []).forEach((r) => {
+            statsMap.set(r.profile_id, {
+              lastServerJoinAt: r.last_server_join_at ?? null,
+              hoursPlayed: Number(r.hours_played ?? 0),
+            });
+          });
+        }
+
         setUsers(
-          (usersData || []).map((u) => ({
-            id: u.id,
-            discordName: u.discord_username ?? "Senza nome",
-            joinedAt: u.created_at,
-            bgStatus: latestBgByUser.get(u.id) ?? "none",
-            isMod: !!u.is_moderator,
-            isAdmin: !!u.is_admin,
-          }))
+          (usersData || []).map((u) => {
+            const st = statsMap.get(u.id);
+            return {
+              id: u.id,
+              discordName: u.discord_username ?? "Senza nome",
+              joinedAt: u.created_at,
+              bgStatus: latestBgByUser.get(u.id) ?? "none",
+              job: latestJobByUser.get(u.id) ?? "",
+              jobNorm: normalizeJob(latestJobByUser.get(u.id) ?? ""),
+              isMod: !!u.is_moderator,
+              isAdmin: !!u.is_admin,
+              lastServerJoinAt: st?.lastServerJoinAt ?? null,
+              hoursPlayed: Number(st?.hoursPlayed ?? 0),
+            };
+          })
         );
       }
 
@@ -236,7 +275,7 @@ export default function AdminDashboard() {
 
       const { data: serverLogsData, error: serverLogsError } = await supabase
         .from("server_logs")
-        .select("id, plugin, plugin_type, description, created_at")
+        .select("id, plugin, type, description, created_at")
         .order("created_at", { ascending: false });
 
       if (serverLogsError) {
@@ -247,7 +286,7 @@ export default function AdminDashboard() {
           (serverLogsData || []).map((l) => ({
             id: l.id,
             plugin: l.plugin ?? "unknown",
-            plugin_type: l.plugin_type ?? "GENERIC",
+            type: l.type ?? "GENERIC",
             description: l.description ?? "",
             createdAt: l.created_at,
           }))
@@ -266,6 +305,48 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, isAdmin]);
 
+  // ✅ opzioni filtro JOB
+  const jobOptions = useMemo(() => {
+    const map = new Map(); // norm->display
+    users.forEach((u) => {
+      const raw = (u.job || "").trim();
+      const norm = normalizeJob(raw);
+      if (!raw) return;
+      if (!map.has(norm)) map.set(norm, raw);
+    });
+
+    const list = Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([norm, display]) => ({ norm, display }));
+
+    return [{ norm: "ALL", display: "Tutti i job" }, ...list];
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    let base = users;
+
+    const q = userSearch.trim().toLowerCase();
+    if (q) {
+      base = base.filter((u) => {
+        const hay = [u.discordName, u.id, u.job]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    if (jobFilter !== "ALL") {
+      base = base.filter((u) => u.jobNorm === jobFilter);
+    }
+
+    return base;
+  }, [users, userSearch, jobFilter]);
+
+  useEffect(() => {
+    setUsersPage(1);
+  }, [jobFilter, userSearch]);
+
   const overviewUsersTotalPages = Math.max(
     1,
     Math.ceil(users.length / PAGE_SIZE_OVERVIEW)
@@ -275,7 +356,10 @@ export default function AdminDashboard() {
     Math.ceil(logs.length / PAGE_SIZE_OVERVIEW)
   );
 
-  const usersTotalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE_FULL));
+  const usersTotalPages = Math.max(
+    1,
+    Math.ceil(filteredUsers.length / PAGE_SIZE_FULL)
+  );
   const logsTotalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE_FULL));
   const serverLogsTotalPages = Math.max(
     1,
@@ -285,7 +369,7 @@ export default function AdminDashboard() {
   const overviewUsers = paginate(users, overviewUsersPage, PAGE_SIZE_OVERVIEW);
   const overviewLogs = paginate(logs, overviewLogsPage, PAGE_SIZE_OVERVIEW);
 
-  const paginatedUsers = paginate(users, usersPage, PAGE_SIZE_FULL);
+  const paginatedUsers = paginate(filteredUsers, usersPage, PAGE_SIZE_FULL);
   const paginatedLogs = paginate(logs, logsPage, PAGE_SIZE_FULL);
   const paginatedServerLogs = paginate(
     serverLogs,
@@ -294,88 +378,7 @@ export default function AdminDashboard() {
   );
 
   const roleLabel = (u) =>
-    u.isAdmin ? "Admin" : u.isMod ? "Mod" : "User";
-
-  const setUserRole = async (userId, nextRole) => {
-    if (!isAdmin) return;
-
-    if (userId === profile.id) {
-      await alertWarning(
-        "Operazione non consentita",
-        "Non puoi modificare il tuo stesso ruolo da qui."
-      );
-      return;
-    }
-
-    const current = users.find((u) => u.id === userId);
-    const currentRole = current ? roleLabel(current) : "User";
-    if (currentRole === nextRole) return;
-
-    const ok = await confirmAction({
-      title: `Impostare ruolo: ${nextRole}?`,
-      text: `Stai cambiando il ruolo da ${currentRole} a ${nextRole}.`,
-      confirmText: "Sì, conferma",
-      cancelText: "Annulla",
-    });
-
-    if (!ok) return;
-
-    setUpdatingRoleIds((prev) => [...prev, userId]);
-
-    const patch =
-      nextRole === "Admin"
-        ? { is_admin: true, is_moderator: true }
-        : nextRole === "Mod"
-        ? { is_admin: false, is_moderator: true }
-        : { is_admin: false, is_moderator: false };
-
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update(patch)
-        .eq("id", userId);
-
-      if (error) {
-        console.error(error);
-        await alertError("Errore", "Errore durante l'aggiornamento del ruolo.");
-        return;
-      }
-
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === userId
-            ? {
-                ...u,
-                isAdmin: !!patch.is_admin,
-                isMod: !!patch.is_moderator,
-              }
-            : u
-        )
-      );
-
-      await supabase.from("logs").insert({
-        type:
-          nextRole === "Admin"
-            ? "ROLE_SET_ADMIN"
-            : nextRole === "Mod"
-            ? "ROLE_SET_MOD"
-            : "ROLE_SET_USER",
-        message: `${profile.discord_username} ha impostato il ruolo di un utente a ${nextRole}.`,
-        meta: JSON.stringify({
-          admin_id: profile.id,
-          target_user_id: userId,
-          role: nextRole,
-        }),
-      });
-
-      toast("success", `Ruolo aggiornato: ${nextRole}`);
-    } catch (err) {
-      console.error("Error updating role", err);
-      await alertError("Errore", "Errore imprevisto durante l'operazione.");
-    } finally {
-      setUpdatingRoleIds((prev) => prev.filter((id) => id !== userId));
-    }
-  };
+    u.isAdmin ? "Admin" : u.isMod ? "Whitelister" : "User";
 
   const pageAnim = {
     initial: { opacity: 0, y: reduce ? 0 : 10 },
@@ -399,7 +402,6 @@ export default function AdminDashboard() {
   }
 
   if (!isStaff) {
-    console.log("ISADMIN", isAdmin)
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
         Non hai i permessi per accedere a questa pagina.
@@ -407,7 +409,7 @@ export default function AdminDashboard() {
     );
   }
 
-  const staffRole = isAdmin ? "Admin" : "Mod";
+  const staffRole = isAdmin ? "Admin" : "Whitelister";
 
   const TabCount = (tabId) => {
     if (!isAdmin) return null;
@@ -418,7 +420,6 @@ export default function AdminDashboard() {
     return null;
   };
 
-  // ---------- UI ----------
   return (
     <section className="space-y-6">
       {/* HEADER */}
@@ -431,20 +432,18 @@ export default function AdminDashboard() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl md:text-2xl font-semibold truncate">
-                  {isAdmin ? "Admin Dashboard" : "Area Moderazione"}
+                  {isAdmin ? "Admin Dashboard" : "Area Whitelister"}
                 </h1>
                 <p className="text-xs md:text-sm text-[var(--color-text-muted)] truncate">
                   {isAdmin
                     ? "Controllo completo su utenti, background e log."
-                    : "Moderazione background (approva / rifiuta)."}
+                    : "Moderazione background (commenti + job sempre)."}
                 </p>
               </div>
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              {/* ✅ nuovo badge ruolo */}
               <RoleBadge role={staffRole} />
-
               <span className="px-3 py-1 rounded-full border border-[var(--color-border)] bg-black/20 text-[var(--color-text-muted)]">
                 Staff ID:{" "}
                 <span className="font-mono">
@@ -530,7 +529,6 @@ export default function AdminDashboard() {
         {/* OVERVIEW */}
         {!loadingData && isAdmin && activeTab === "overview" && (
           <motion.section key="overview" {...pageAnim} className="space-y-6">
-            {/* KPI */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 {
@@ -591,7 +589,6 @@ export default function AdminDashboard() {
               })}
             </div>
 
-            {/* LISTE OVERVIEW */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Ultimi iscritti */}
               <div className="lg:col-span-5 xl:col-span-4">
@@ -627,10 +624,15 @@ export default function AdminDashboard() {
                                 timeStyle: "short",
                               })}
                             </p>
+                            <p className="text-[10px] text-[var(--color-text-muted)] truncate">
+                              Job:{" "}
+                              <span className="text-white/80 font-semibold">
+                                {u.job || "—"}
+                              </span>
+                            </p>
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {/* qui lasciamo BG status (overview) */}
                             <span
                               className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
                                 u.bgStatus === "none" ? "none" : u.bgStatus
@@ -778,38 +780,90 @@ export default function AdminDashboard() {
         {isAdmin && activeTab === "users" && (
           <motion.section key="users" {...pageAnim} className="space-y-4">
             <div className={`${shellCard} p-4 md:p-5 space-y-3`}>
-              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
                 <div>
                   <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
                     <UsersIcon className="w-5 h-5" />
                     Utenti registrati
                   </h2>
                   <p className="text-xs md:text-sm text-[var(--color-text-muted)]">
-                    Gestione ruoli: User / Mod / Admin.
+                    Job = gruppo (preso dai background). Ultimo accesso + ore
+                    giocate.
                   </p>
                 </div>
-                <span className="text-xs text-[var(--color-text-muted)]">
-                  {buildRangeLabel(users.length, usersPage, PAGE_SIZE_FULL)}
-                </span>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* search */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      placeholder="Cerca utente (discord/id/job)"
+                      className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                    />
+                  </div>
+
+                  {/* job filter */}
+                  <div className="relative">
+                    <Briefcase className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <select
+                      value={jobFilter}
+                      onChange={(e) => setJobFilter(e.target.value)}
+                      className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                    >
+                      {jobOptions.map((j) => (
+                        <option key={j.norm} value={j.norm}>
+                          {j.display}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span className="text-xs text-[var(--color-text-muted)]">
+                    {buildRangeLabel(
+                      filteredUsers.length,
+                      usersPage,
+                      PAGE_SIZE_FULL
+                    )}
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-2 max-h-[520px] overflow-y-auto">
                 {paginatedUsers.map((u) => {
-                  const isUpdating = updatingRoleIds.includes(u.id);
-                  const isSelf = u.id === profile.id;
                   const currentRole = roleLabel(u);
-
                   return (
                     <div
                       key={u.id}
                       className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                     >
-                      {/* ✅ NEW layout + ✅ REMOVED BG badge in tab Utenti */}
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-semibold truncate">
                             {u.discordName}
                           </p>
+
+                          <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                            Ultimo accesso:{" "}
+                            <span className="text-white/80">
+                              {u.lastServerJoinAt
+                                ? new Date(u.lastServerJoinAt).toLocaleString(
+                                    "it-IT",
+                                    {
+                                      dateStyle: "short",
+                                      timeStyle: "short",
+                                    }
+                                  )
+                                : "—"}
+                            </span>
+                            <span className="mx-2 opacity-50">•</span>
+                            Ore:{" "}
+                            <span className="text-white/80 font-semibold">
+                              {Number(u.hoursPlayed || 0).toFixed(1)}
+                            </span>
+                          </p>
+
                           <p className="text-[11px] text-[var(--color-text-muted)]">
                             Iscritto il{" "}
                             {new Date(u.joinedAt).toLocaleString("it-IT", {
@@ -824,50 +878,22 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 justify-end">
+                          <span
+                            className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
+                              u.bgStatus === "none" ? "none" : u.bgStatus
+                            )}`}
+                          >
+                            {u.bgStatus === "none"
+                              ? "Nessun BG"
+                              : u.bgStatus === "pending"
+                              ? "In attesa"
+                              : u.bgStatus === "approved"
+                              ? "Approvato"
+                              : "Rifiutato"}
+                          </span>
                           <RoleBadge role={currentRole} />
-
-                          <div className="h-6 w-px bg-[var(--color-border)] mx-1 hidden md:block" />
-
-                          <div className="flex items-center gap-2">
-                            {/* segmented control */}
-                            <div className="inline-flex rounded-full border border-[var(--color-border)] bg-black/20 p-1">
-                              {["User", "Mod", "Admin"].map((r) => {
-                                const active = currentRole === r;
-                                return (
-                                  <button
-                                    key={r}
-                                    type="button"
-                                    disabled={isUpdating || isSelf}
-                                    onClick={() => setUserRole(u.id, r)}
-                                    className={`px-3 py-1.5 rounded-full text-[10px] font-semibold transition ${
-                                      active
-                                        ? "bg-white/10 text-white border border-[var(--violet-soft)] shadow-[0_0_0_1px_rgba(124,92,255,0.18)]"
-                                        : "text-[var(--color-text-muted)] hover:bg-white/5"
-                                    } ${
-                                      isUpdating || isSelf ? "opacity-50" : ""
-                                    }`}
-                                  >
-                                    {r}
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {isUpdating && (
-                              <span className="text-[10px] text-[var(--color-text-muted)] inline-flex items-center gap-2">
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                Aggiornamento…
-                              </span>
-                            )}
-                          </div>
                         </div>
                       </div>
-
-                      {isSelf && (
-                        <p className="mt-2 text-[10px] text-[var(--color-text-muted)]">
-                          Non puoi modificare il tuo ruolo da qui.
-                        </p>
-                      )}
                     </div>
                   );
                 })}
@@ -981,8 +1007,7 @@ export default function AdminDashboard() {
                     Log server
                   </h2>
                   <p className="text-xs md:text-sm text-[var(--color-text-muted)]">
-                    Eventi dai plugin/risorse FiveM (payload embeds per
-                    Discord).
+                    Eventi dai plugin/risorse FiveM.
                   </p>
                 </div>
                 <span className="text-xs text-[var(--color-text-muted)]">
@@ -1006,7 +1031,6 @@ export default function AdminDashboard() {
                           {l.plugin} - {l.type}
                         </span>
                       </div>
-
                       <span className="text-[10px] text-[var(--color-text-muted)]">
                         {new Date(l.createdAt).toLocaleString("it-IT", {
                           dateStyle: "short",
