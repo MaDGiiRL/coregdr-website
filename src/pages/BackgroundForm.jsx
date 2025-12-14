@@ -1,5 +1,5 @@
 // src/pages/BackgroundForm.jsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 import Swal from "sweetalert2";
@@ -9,6 +9,39 @@ import { z } from "zod";
 
 export const MAX_STORIA = 5000;
 export const MAX_CONDANNE = 300;
+
+export const usePenalCode = () => {
+  const [articoli, setArticoli] = useState([]);
+  const [categorie, setCategorie] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // fetch articoli
+        const resArticoli = await fetch("http://localhost:3001/api/procura/articoli");
+        if (!resArticoli.ok) throw new Error(`HTTP ${resArticoli.status}`);
+        const articoliData = await resArticoli.json();
+
+        // fetch categorie
+        const resCategorie = await fetch("http://localhost:3001/api/procura/articoli/categorie");
+        if (!resCategorie.ok) throw new Error(`HTTP ${resCategorie.status}`);
+        const categorieData = await resCategorie.json();
+
+        setArticoli(articoliData);
+        setCategorie(categorieData); // es. [{ id: 1, nome: "Reati contro la persona" }, ...]
+      } catch (err) {
+        console.error("Fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  return { articoli, categorie, loading };
+};
 
 export const ListItemSchema = z.object({
   id: z.number(),
@@ -20,6 +53,71 @@ export const ListItemSchema = z.object({
     .or(z.literal("")),
   inCura: z.boolean(),
 });
+
+const CondannePenaliTable = ({ value = [], onChange }) => {
+  const { articoli, categorie, loading } = usePenalCode();
+
+  const filteredCategorie = categorie.filter(c => c.id <= 8);
+
+  if (loading) return <p>Caricamento articoli…</p>;
+
+  // 🔹 Raggruppo articoli per categoria
+  const grouped = filteredCategorie.reduce((acc, cat) => {
+    acc[cat.id] = {
+      label: cat.nome, // nome categoria
+      items: articoli.filter((a) => a.categoria === cat.id),
+    };
+    return acc;
+  }, {});
+
+  const toggle = (nome) => {
+    onChange(
+      value.includes(nome)
+        ? value.filter((v) => v !== nome)
+        : [...value, nome]
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {Object.entries(grouped)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([categoriaId, group]) => (
+          <div key={categoriaId} className="border rounded-xl overflow-hidden">
+            {/* Header categoria */}
+            <div className="px-4 py-2 bg-black/20 font-semibold text-sm">
+              {group.label || `Categoria ${categoriaId}`}
+            </div>
+
+            {/* Tabella categoria */}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-black/10">
+                  <th className="px-3 py-2 text-left">Articolo</th>
+                  <th className="px-3 py-2 text-center">Seleziona</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.items.map((a) => (
+                  <tr key={a.id} className="border-t">
+                    <td className="px-3 py-2 capitalize">{a.nome}</td>
+                    <td className="px-3 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={value.includes(a.nome)}
+                        onChange={() => toggle(a.nome)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+    </div>
+  );
+};
+
 
 export const BackgroundSchema = z
   .object({
@@ -57,12 +155,8 @@ export const BackgroundSchema = z
       .max(MAX_STORIA, `Massimo ${MAX_STORIA} caratteri`)
       .optional()
       .or(z.literal("")),
-    condannePenali: z
-      .string()
-      .trim()
-      .max(MAX_CONDANNE, `Massimo ${MAX_CONDANNE} caratteri`)
-      .optional()
-      .or(z.literal("")),
+
+    condannePenali: z.array(z.string()).max(10).default([]),
 
     patologie: z.array(ListItemSchema).default([]),
     dipendenze: z.array(ListItemSchema).default([]),
@@ -120,7 +214,7 @@ export default function BackgroundForm() {
     etnia: "",
     dataNascita: "",
     storiaBreve: "",
-    condannePenali: "",
+    condannePenali: [],
     patologie: [{ id: 1, nome: "", inCura: false }],
     dipendenze: [{ id: 1, nome: "", inCura: false }],
     segniDistintivi: "",
@@ -391,12 +485,16 @@ export default function BackgroundForm() {
             onChange={(v) => handleChange("storiaBreve", v)}
           />
 
-          <TextArea
-            label="Condanne penali (facoltativo)"
-            max={MAX_CONDANNE}
-            value={form.condannePenali}
-            onChange={(v) => handleChange("condannePenali", v)}
-          />
+          <div className="space-y-2">
+            <label className="text-xs font-medium">
+              Condanne penali (seleziona articoli)
+            </label>
+
+            <CondannePenaliTable
+              value={form.condannePenali}
+              onChange={(v) => handleChange("condannePenali", v)}
+            />
+          </div>
 
           <DynamicList
             title="Patologie"
