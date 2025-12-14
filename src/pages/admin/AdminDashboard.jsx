@@ -9,10 +9,9 @@ import {
   RefreshCw,
   Crown,
   BadgeCheck,
-  UserCog, 
+  UserCog,
   Server,
 } from "lucide-react";
-
 
 import BackgroundQueue from "./BackgroundQueue";
 import { useAuth } from "../../context/AuthContext";
@@ -40,15 +39,32 @@ const statusPill = (status) => {
   }
 };
 
+// ✅ NEW: badge ruoli (più “premium”)
 const rolePill = (role) => {
   switch (role) {
     case "Admin":
-      return "bg-[var(--violet)]/15 text-[var(--color-accent-cool)] border-[var(--violet-soft)]";
+      return "bg-gradient-to-r from-[var(--violet)]/25 to-fuchsia-400/10 text-white border-[var(--violet-soft)] shadow-[0_0_0_1px_rgba(124,92,255,0.25)]";
     case "Mod":
-      return "bg-amber-400/15 text-amber-300 border-amber-400/40";
+      return "bg-gradient-to-r from-amber-400/20 to-amber-400/5 text-amber-200 border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.18)]";
     default:
-      return "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]";
+      return "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]";
   }
+};
+
+// ✅ NEW: componente badge ruoli con icona
+const RoleBadge = ({ role }) => {
+  const Icon = role === "Admin" ? Crown : role === "Mod" ? BadgeCheck : UserCog;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] ${rolePill(
+        role
+      )}`}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      <span className="font-semibold">{role}</span>
+    </span>
+  );
 };
 
 export default function AdminDashboard() {
@@ -65,7 +81,7 @@ export default function AdminDashboard() {
       { id: "backgrounds", label: "Background", icon: FileText },
       { id: "users", label: "Utenti", icon: UsersIcon },
       { id: "logs", label: "Log", icon: Activity },
-      { id: "serverLogs", label: "Log server", icon: Server }, // ✅ NEW
+      { id: "serverLogs", label: "Log server", icon: Server },
     ],
     []
   );
@@ -82,7 +98,7 @@ export default function AdminDashboard() {
 
   const [users, setUsers] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [serverLogs, setServerLogs] = useState([]); // ✅ NEW
+  const [serverLogs, setServerLogs] = useState([]);
 
   const [loadingData, setLoadingData] = useState(true);
   const [updatingRoleIds, setUpdatingRoleIds] = useState([]);
@@ -92,11 +108,10 @@ export default function AdminDashboard() {
 
   const [usersPage, setUsersPage] = useState(1);
   const [logsPage, setLogsPage] = useState(1);
-  const [serverLogsPage, setServerLogsPage] = useState(1); // ✅ NEW
+  const [serverLogsPage, setServerLogsPage] = useState(1);
 
   const shellCard =
     "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
-
   const softPanel =
     "rounded-2xl border border-[var(--color-border)] bg-black/20";
 
@@ -123,7 +138,7 @@ export default function AdminDashboard() {
   const fetchData = async () => {
     if (!profile) return;
 
-    // i mod vedono solo backgrounds: non carichiamo overview/users/logs
+    // i mod vedono solo backgrounds
     if (!isAdmin) {
       setLoadingData(false);
       return;
@@ -215,7 +230,6 @@ export default function AdminDashboard() {
         );
       }
 
-      // ✅ NEW: SERVER LOGS
       const { data: serverLogsData, error: serverLogsError } = await supabase
         .from("server_logs")
         .select("id, plugin, type, description, created_at")
@@ -262,7 +276,7 @@ export default function AdminDashboard() {
   const serverLogsTotalPages = Math.max(
     1,
     Math.ceil(serverLogs.length / PAGE_SIZE_FULL)
-  ); // ✅ NEW
+  );
 
   const overviewUsers = paginate(users, overviewUsersPage, PAGE_SIZE_OVERVIEW);
   const overviewLogs = paginate(logs, overviewLogsPage, PAGE_SIZE_OVERVIEW);
@@ -273,7 +287,7 @@ export default function AdminDashboard() {
     serverLogs,
     serverLogsPage,
     PAGE_SIZE_FULL
-  ); // ✅ NEW
+  );
 
   const roleLabel = (u) =>
     u.isAdmin ? "Admin" : u.isModerator ? "Mod" : "User";
@@ -394,7 +408,7 @@ export default function AdminDashboard() {
     if (!isAdmin) return null;
     if (tabId === "users") return stats.totalUsers;
     if (tabId === "logs") return logs.length;
-    if (tabId === "serverLogs") return serverLogs.length; // ✅ NEW
+    if (tabId === "serverLogs") return serverLogs.length;
     if (tabId === "backgrounds") return stats.pendingBackgrounds;
     return null;
   };
@@ -423,20 +437,8 @@ export default function AdminDashboard() {
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span
-                className={`px-3 py-1 rounded-full border ${rolePill(
-                  staffRole
-                )}`}
-              >
-                <span className="inline-flex items-center gap-2">
-                  {isAdmin ? (
-                    <Crown className="w-4 h-4" />
-                  ) : (
-                    <BadgeCheck className="w-4 h-4" />
-                  )}
-                  Ruolo: {staffRole}
-                </span>
-              </span>
+              {/* ✅ nuovo badge ruolo */}
+              <RoleBadge role={staffRole} />
 
               <span className="px-3 py-1 rounded-full border border-[var(--color-border)] bg-black/20 text-[var(--color-text-muted)]">
                 Staff ID:{" "}
@@ -623,6 +625,7 @@ export default function AdminDashboard() {
                           </div>
 
                           <div className="flex items-center gap-2">
+                            {/* qui lasciamo BG status (overview) */}
                             <span
                               className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
                                 u.bgStatus === "none" ? "none" : u.bgStatus
@@ -637,13 +640,7 @@ export default function AdminDashboard() {
                                 : "Rifiutato"}
                             </span>
 
-                            <span
-                              className={`px-2.5 py-1 rounded-full border text-[10px] ${rolePill(
-                                roleLabel(u)
-                              )}`}
-                            >
-                              {roleLabel(u)}
-                            </span>
+                            <RoleBadge role={roleLabel(u)} />
                           </div>
                         </div>
                       </div>
@@ -802,6 +799,7 @@ export default function AdminDashboard() {
                       key={u.id}
                       className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                     >
+                      {/* ✅ NEW layout + ✅ REMOVED BG badge in tab Utenti */}
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-semibold truncate">
@@ -813,60 +811,58 @@ export default function AdminDashboard() {
                               dateStyle: "short",
                               timeStyle: "short",
                             })}
+                            <span className="mx-2 opacity-50">•</span>
+                            <span className="font-mono opacity-80">
+                              {u.id.slice(0, 8)}…
+                            </span>
                           </p>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`px-2.5 py-1 rounded-full border text-[10px] ${rolePill(
-                              currentRole
-                            )}`}
-                          >
-                            {currentRole}
-                          </span>
-
-                          <span
-                            className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
-                              u.bgStatus === "none" ? "none" : u.bgStatus
-                            )}`}
-                          >
-                            {u.bgStatus === "none"
-                              ? "Nessun BG"
-                              : u.bgStatus === "pending"
-                              ? "In attesa"
-                              : u.bgStatus === "approved"
-                              ? "Approvato"
-                              : "Rifiutato"}
-                          </span>
+                        <div className="flex flex-wrap items-center gap-2 justify-end">
+                          <RoleBadge role={currentRole} />
 
                           <div className="h-6 w-px bg-[var(--color-border)] mx-1 hidden md:block" />
 
-                          <button
-                            type="button"
-                            disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(u.id, "User")}
-                            className="text-[10px] px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] disabled:opacity-40 hover:bg-white/5"
-                          >
-                            User
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(u.id, "Mod")}
-                            className="text-[10px] px-3 py-1.5 rounded-full border border-amber-400/60 text-amber-300 disabled:opacity-40 hover:bg-white/5"
-                          >
-                            Mod
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isUpdating || isSelf}
-                            onClick={() => setUserRole(u.id, "Admin")}
-                            className="text-[10px] px-3 py-1.5 rounded-full border border-[var(--violet-soft)] text-[var(--color-accent-cool)] disabled:opacity-40 hover:bg-white/5"
-                          >
-                            Admin
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {/* segmented control */}
+                            <div className="inline-flex rounded-full border border-[var(--color-border)] bg-black/20 p-1">
+                              {["User", "Mod", "Admin"].map((r) => {
+                                const active = currentRole === r;
+                                return (
+                                  <button
+                                    key={r}
+                                    type="button"
+                                    disabled={isUpdating || isSelf}
+                                    onClick={() => setUserRole(u.id, r)}
+                                    className={`px-3 py-1.5 rounded-full text-[10px] font-semibold transition ${
+                                      active
+                                        ? "bg-white/10 text-white border border-[var(--violet-soft)] shadow-[0_0_0_1px_rgba(124,92,255,0.18)]"
+                                        : "text-[var(--color-text-muted)] hover:bg-white/5"
+                                    } ${
+                                      isUpdating || isSelf ? "opacity-50" : ""
+                                    }`}
+                                  >
+                                    {r}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {isUpdating && (
+                              <span className="text-[10px] text-[var(--color-text-muted)] inline-flex items-center gap-2">
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                Aggiornamento…
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
+
+                      {isSelf && (
+                        <p className="mt-2 text-[10px] text-[var(--color-text-muted)]">
+                          Non puoi modificare il tuo ruolo da qui.
+                        </p>
+                      )}
                     </div>
                   );
                 })}
@@ -969,7 +965,7 @@ export default function AdminDashboard() {
           </motion.section>
         )}
 
-        {/* ✅ NEW: SERVER LOGS */}
+        {/* SERVER LOGS */}
         {isAdmin && activeTab === "serverLogs" && (
           <motion.section key="serverLogs" {...pageAnim} className="space-y-4">
             <div className={`${shellCard} p-4 md:p-5 space-y-3`}>
@@ -1017,7 +1013,6 @@ export default function AdminDashboard() {
                     <p className="mt-2 text-xs md:text-sm text-[var(--color-text)]">
                       {l.description}
                     </p>
-
                   </div>
                 ))}
 
@@ -1059,4 +1054,4 @@ export default function AdminDashboard() {
       </AnimatePresence>
     </section>
   );
-} 
+}

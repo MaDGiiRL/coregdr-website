@@ -3,12 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
-// ⚠️ Se @react-three/postprocessing non è installato/compatibile, commenta queste 2 righe
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 
 import { createGtaTexturePack } from "./gtaTextures";
 
-// Palette coerente con i tuoi CSS vars
 const PALETTE = {
   violet: "#6F2FD9",
   violetLight: "#B496FF",
@@ -339,7 +337,7 @@ export default function CityRunnerBackground({
 
   return (
     <div
-      className="fixed inset-x-0 pointer-events-none z-0" // ✅ FIX: NON negativo
+      className="fixed inset-x-0 pointer-events-none z-0"
       style={{ top: navHeight, height: `calc(100vh - ${navHeight}px)` }}
     >
       {!webglOk ? (
@@ -356,7 +354,7 @@ export default function CityRunnerBackground({
             depth: true,
             preserveDrawingBuffer: false,
           }}
-          style={{ width: "100%", height: "100%" }} // ✅ importante
+          style={{ width: "100%", height: "100%" }}
           camera={{ position: [0, 5.2, 14], fov: 58, near: 0.1, far: 260 }}
           onCreated={({ gl }) => {
             const canvas = gl.domElement;
@@ -366,7 +364,7 @@ export default function CityRunnerBackground({
               setWebglOk(false);
             };
 
-            // ✅ cleanup + listener
+        
             canvas.addEventListener("webglcontextlost", onLost, false);
 
             return () => {
@@ -378,7 +376,7 @@ export default function CityRunnerBackground({
 
           <CityRunnerScene scrollRef={scrollRef} />
 
-          {/* Bloom: se ti dà problemi di dipendenze, commenta questo blocco */}
+  
           <EffectComposer>
             <Bloom
               intensity={0.85}

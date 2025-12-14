@@ -225,96 +225,95 @@ export default function HowToConnect() {
         style={{ zIndex: 10 }}
       >
         {/* Range scroll per animazione */}
-        <div className="min-h-[220vh]">
-          <div className="pt-6 space-y-6">
-            <header className="space-y-3 relative">
-              <div className="flex items-start gap-3">
-                <div className="mt-1 rounded-2xl border border-[var(--color-border)] bg-white/5 p-2">
-                  <Sparkles className="h-5 w-5 text-[var(--color-accent-cool)]" />
-                </div>
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-semibold">
-                    Come connettersi al server
-                  </h1>
-                  <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-2xl">
-                    Segui questi passaggi per entrare su{" "}
-                    <strong>Core Roleplay</strong> e ottenere passaporto,
-                    whitelist e background approvato.
-                  </p>
-                </div>
+
+        <div className="pt-6 space-y-6">
+          <header className="space-y-3 relative">
+            <div className="flex items-start gap-3">
+              <div className="mt-1 rounded-2xl border border-[var(--color-border)] bg-white/5 p-2">
+                <Sparkles className="h-5 w-5 text-[var(--color-accent-cool)]" />
               </div>
-            </header>
-
-            {/* MOBILE */}
-            <div className="md:hidden relative">
-              <div className="relative mt-6 overflow-hidden">
-                <div
-                  className="flex items-stretch gap-4 overflow-x-auto pb-4 snap-x snap-mandatory pr-6"
-                  style={{ WebkitOverflowScrolling: "touch" }}
-                >
-                  {steps.map((step) => (
-                    <div
-                      key={step.id}
-                      className="snap-center shrink-0 w-[88%] max-w-[88%]"
-                    >
-                      <StepCard step={step} />
-                    </div>
-                  ))}
-                </div>
-
-                <p className="mt-1 text-[11px] text-[var(--color-text-muted)] flex items-center gap-2">
-                  <ArrowLeftRight className="h-4 w-4" />
-                  Scorri a destra/sinistra per vedere i passaggi.
+              <div>
+                <h1 className="text-2xl md:text-3xl font-semibold">
+                  Come connettersi al server
+                </h1>
+                <p className="text-sm md:text-base text-[var(--color-text-muted)] max-w-2xl">
+                  Segui questi passaggi per entrare su{" "}
+                  <strong>Core Roleplay</strong> e ottenere passaporto,
+                  whitelist e background approvato.
                 </p>
               </div>
             </div>
+          </header>
 
-            {/* DESKTOP */}
-            <div className="relative mt-8 overflow-hidden hidden md:block">
-              <motion.div
-                className="flex items-stretch gap-4 md:gap-6"
-                animate={{ x: ["0%", "-50%"] }}
-                transition={{
-                  duration: isPaused ? 120 : 30,
-                  ease: "linear",
-                  repeat: Infinity,
-                  repeatType: "loop",
-                }}
-                onMouseEnter={() => setIsPaused(true)}
-                onMouseLeave={() => setIsPaused(false)}
+          {/* MOBILE */}
+          <div className="md:hidden relative">
+            <div className="relative mt-6 overflow-hidden">
+              <div
+                className="flex items-stretch gap-4 overflow-x-auto pb-4 snap-x snap-mandatory pr-6"
+                style={{ WebkitOverflowScrolling: "touch" }}
               >
-                {loopedSteps.map((step, index) => (
+                {steps.map((step) => (
                   <div
-                    key={`${step.id}-${index}`}
-                    className="min-w-[280px] md:min-w-[340px] lg:min-w-[380px]"
+                    key={step.id}
+                    className="snap-center shrink-0 w-[88%] max-w-[88%]"
                   >
                     <StepCard step={step} />
                   </div>
                 ))}
-              </motion.div>
-            </div>
-
-            {/* BOX FINALE */}
-            <div className="mt-2 text-xs md:text-sm text-[var(--color-text-muted)] p-4 rounded-2xl border border-[var(--color-border)] bg-white/5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative">
-              <div className="flex items-start gap-2">
-                <LifeBuoy className="h-4 w-4 mt-0.5 text-[var(--color-accent-cool)]" />
-                <div>
-                  Se riscontri problemi di connessione o con la whitelist, apri
-                  un ticket sul <strong>Discord</strong> e specifica screenshot
-                  e orario del problema.
-                </div>
               </div>
 
-              <a
-                href="https://discord.gg/tuo-invite"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-xs md:text-sm font-medium bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 transition"
-              >
-                <Users className="h-4 w-4" />
-                Apri Discord
-              </a>
+              <p className="mt-1 text-[11px] text-[var(--color-text-muted)] flex items-center gap-2">
+                <ArrowLeftRight className="h-4 w-4" />
+                Scorri a destra/sinistra per vedere i passaggi.
+              </p>
             </div>
+          </div>
+
+          {/* DESKTOP */}
+          <div className="relative mt-8 overflow-hidden hidden md:block">
+            <motion.div
+              className="flex items-stretch gap-4 md:gap-6"
+              animate={{ x: ["0%", "-50%"] }}
+              transition={{
+                duration: isPaused ? 120 : 30,
+                ease: "linear",
+                repeat: Infinity,
+                repeatType: "loop",
+              }}
+              onMouseEnter={() => setIsPaused(true)}
+              onMouseLeave={() => setIsPaused(false)}
+            >
+              {loopedSteps.map((step, index) => (
+                <div
+                  key={`${step.id}-${index}`}
+                  className="min-w-[280px] md:min-w-[340px] lg:min-w-[380px]"
+                >
+                  <StepCard step={step} />
+                </div>
+              ))}
+            </motion.div>
+          </div>
+
+          {/* BOX FINALE */}
+          <div className="mt-2 text-xs md:text-sm text-[var(--color-text-muted)] p-4 rounded-2xl border border-[var(--color-border)] bg-white/5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 relative">
+            <div className="flex items-start gap-2">
+              <LifeBuoy className="h-4 w-4 mt-0.5 text-[var(--color-accent-cool)]" />
+              <div>
+                Se riscontri problemi di connessione o con la whitelist, apri un
+                ticket sul <strong>Discord</strong> e specifica screenshot e
+                orario del problema.
+              </div>
+            </div>
+
+            <a
+              href="https://discord.gg/tuo-invite"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full text-xs md:text-sm font-medium bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 transition"
+            >
+              <Users className="h-4 w-4" />
+              Apri Discord
+            </a>
           </div>
         </div>
       </section>

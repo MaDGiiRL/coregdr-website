@@ -137,7 +137,6 @@ export default function Navbar() {
     };
   }, [mobileOpen, userOpen]);
 
-  // ✅ blocca scroll body quando drawer aperto (evita effetti strani)
   useEffect(() => {
     if (!mobileOpen) return;
     const prev = document.body.style.overflow;
@@ -205,7 +204,6 @@ export default function Navbar() {
     },
   };
 
-  // ✅ z-index “hard” per stare SEMPRE sopra al Canvas
   const Z_NAV = 100000;
   const Z_OVER = 100001;
   const Z_DRAWER = 100002;

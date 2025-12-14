@@ -15,7 +15,8 @@ const C = {
 
 const rgba = ([r, g, b], a) => `rgba(${r}, ${g}, ${b}, ${a})`;
 
-// 10 bolle: più distribuite e con ampiezze diverse
+
+
 const BUBBLES = [
   {
     color: "violet",
@@ -160,7 +161,7 @@ export default function AnimatedGradientBackground() {
         )} 0%, transparent 62%)`;
       });
 
-      // IMPORTANT: string compatta (meno rischio parsing)
+
       const bg = `${layers.join(
         ","
       )},linear-gradient(180deg, ${BG_TOP}, ${BG_BOTTOM})`;
