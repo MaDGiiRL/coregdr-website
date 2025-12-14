@@ -24,6 +24,7 @@ import { signInWithDiscord, signOut } from "../lib/auth";
 import { alertError, confirmAction, toast } from "../lib/alerts";
 import { supabase } from "../lib/supabaseClient";
 
+// CSS utility classes for links
 const linkBase =
   "px-3 py-2 text-sm md:text-base rounded-full transition border border-transparent inline-flex items-center gap-2";
 const linkActive =
@@ -31,6 +32,7 @@ const linkActive =
 const linkInactive =
   "text-[var(--color-text-muted)] hover:text-[var(--color-accent-cool)] hover:bg-white/5";
 
+// Navigation items with links, labels, and icons
 const navItems = [
   { to: "/", label: "Home", icon: HomeIcon, end: true },
   { to: "/how-to-connect", label: "Come connettersi", icon: Plug },
@@ -38,6 +40,7 @@ const navItems = [
   { to: "/staff", label: "Staff", icon: Users },
 ];
 
+// Function to build the Discord avatar URL
 function buildDiscordAvatarUrl(meta) {
   if (!meta) return null;
 
@@ -76,7 +79,6 @@ const writeLog = async (type, message, meta = {}) => {
       created_at: new Date().toISOString(),
     });
   } catch (e) {
-    // non blocca mai la UI
     console.debug("[NAVBAR LOG]", e?.message || e);
   }
 };
@@ -143,7 +145,6 @@ export default function Navbar() {
     };
 
     const onClick = (e) => {
-      // mobile drawer click-outside
       if (
         mobileOpen &&
         mobileRef.current &&
@@ -151,13 +152,9 @@ export default function Navbar() {
       ) {
         setMobileOpen(false);
       }
-
-      // user dropdown click-outside
       if (userOpen && userRef.current && !userRef.current.contains(e.target)) {
         setUserOpen(false);
       }
-
-      // notif panel click-outside (nuovo)
       if (
         notifOpen &&
         notifRef.current &&
