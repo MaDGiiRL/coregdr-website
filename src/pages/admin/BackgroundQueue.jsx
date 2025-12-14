@@ -283,16 +283,107 @@ export default function BackgroundQueue() {
   const isLocked = selected?.status === "approved";
 
   useEffect(() => {
-    if (!selected) return;
-    setCommentDraft("");
-    setJobDraft(selected.job || "");
-    setEditMode(false);
+    if (!selected?.id) return;
 
-    // ✅ reset reject modal when selection changes
-    setRejectOpen(false);
-    setRejectReasonDraft("");
-    setRejectSending(false);
-  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+    let alive = true;
+
+    // Caricamento iniziale dei commenti
+    const loadComments = async () => {
+      setCommentsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("character_comments")
+          .select(
+            `
+          id,
+          comment,
+          created_at,
+          author_id,
+          profiles:profiles!character_comments_author_id_fkey (
+            discord_username,
+            is_admin,
+            is_moderator
+          )
+        `
+          )
+          .eq("character_id", selected.id)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.error(error);
+          await alertError("Errore", "Impossibile caricare i commenti.");
+          return;
+        }
+
+        const mapped = (data || []).map((c) => {
+          const p = c.profiles;
+          const role = p?.is_admin
+            ? "Admin"
+            : p?.is_moderator
+            ? "Whitelister"
+            : "User";
+          return {
+            id: c.id,
+            message: c.comment ?? "",
+            createdAt: c.created_at,
+            authorId: c.author_id,
+            authorName: p?.discord_username ?? "Sconosciuto",
+            authorRole: role,
+          };
+        });
+
+        setComments(mapped);
+      } finally {
+        setCommentsLoading(false);
+      }
+    };
+
+    loadComments();
+
+    // Sottoscrizione ai cambiamenti in tempo reale
+    const commentChannel = supabase
+      .channel("realtime-comments")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "character_comments",
+          filter: `character_id=eq.${selected.id}`,
+        },
+        (payload) => {
+          if (!alive) return;
+
+          const newComment = payload.new;
+          if (!newComment) return;
+
+          const profile = newComment.profiles;
+          const role = profile?.is_admin
+            ? "Admin"
+            : profile?.is_moderator
+            ? "Whitelister"
+            : "User";
+
+          setComments((prev) => [
+            ...prev,
+            {
+              id: newComment.id,
+              message: newComment.comment ?? "",
+              createdAt: newComment.created_at,
+              authorId: newComment.author_id,
+              authorName: profile?.discord_username ?? "Sconosciuto",
+              authorRole: role,
+            },
+          ]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      alive = false;
+      supabase.removeChannel(commentChannel); // Unsubscribe from the channel when the component is unmounted
+    };
+  }, [selected?.id]);
 
   const handleSelect = (id) => {
     setSelectedId(id);
@@ -398,6 +489,12 @@ export default function BackgroundQueue() {
       setCommentsLoading(false);
     }
   };
+
+  const sortedComments = useMemo(() => {
+    return comments.sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+  }, [comments]);
 
   useEffect(() => {
     if (!selected?.id) {
@@ -1443,20 +1540,20 @@ export default function BackgroundQueue() {
                           </div>
 
                           <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1">
-                            {comments.map((c) => (
+                            {sortedComments.map((comment) => (
                               <div
-                                key={c.id}
+                                key={comment.id} // Usa comment.id per garantire una key unica
                                 className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="text-xs font-semibold truncate">
-                                      {c.authorName}
+                                      {comment.authorName}
                                     </span>
-                                    <RoleBadge role={c.authorRole} />
+                                    <RoleBadge role={comment.authorRole} />
                                   </div>
                                   <span className="text-[10px] text-[var(--color-text-muted)]">
-                                    {new Date(c.createdAt).toLocaleString(
+                                    {new Date(comment.createdAt).toLocaleString(
                                       "it-IT",
                                       {
                                         dateStyle: "short",
@@ -1468,7 +1565,7 @@ export default function BackgroundQueue() {
 
                                 <div className="mt-1 max-h-[64px] overflow-y-auto">
                                   <p className="text-xs md:text-sm text-[var(--color-text)] whitespace-pre-line leading-relaxed">
-                                    {c.message}
+                                    {comment.message}
                                   </p>
                                 </div>
                               </div>
