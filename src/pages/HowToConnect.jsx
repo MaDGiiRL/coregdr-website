@@ -14,6 +14,10 @@ import {
   ArrowRight,
   Sparkles,
   LifeBuoy,
+  Github,
+  Twitter,
+  Instagram,
+  Facebook,
 } from "lucide-react";
 
 import CityRunnerBackground from "../components/backgrounds/scroll_home/CityRunnerBackground";
@@ -91,6 +95,58 @@ const stepIcon = (id) => {
       return Sparkles;
   }
 };
+
+// -------------------------
+// Social Contacts Section
+// -------------------------
+const socialLinks = [
+  {
+    id: 1,
+    name: "GitHub",
+    href: "https://github.com/tuo-profilo",
+    icon: <Github />,
+  },
+  {
+    id: 2,
+    name: "Twitter",
+    href: "https://twitter.com/tuo-profilo",
+    icon: <Twitter />,
+  },
+  {
+    id: 3,
+    name: "Instagram",
+    href: "https://instagram.com/tuo-profilo",
+    icon: <Instagram />,
+  },
+  {
+    id: 4,
+    name: "Facebook",
+    href: "https://facebook.com/tuo-profilo",
+    icon: <Facebook />,
+  },
+];
+
+const SocialContacts = () => (
+  <div className="mt-8 text-center">
+    <h3 className="text-xl font-semibold text-[var(--color-text-muted)]">
+      Contattaci sui Social
+    </h3>
+    <div className="flex justify-center gap-6 mt-4">
+      {socialLinks.map((social) => (
+        <a
+          key={social.id}
+          href={social.href}
+          target="_blank"
+          rel="noreferrer"
+          className="relative flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-r from-violet-500 to-blue-500 text-white shadow-lg transition-transform transform hover:scale-110"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 opacity-50 rounded-full animate-pulse"></div>
+          <div className="z-10">{social.icon}</div>
+        </a>
+      ))}
+    </div>
+  </div>
+);
 
 // -------------------------
 // UI
@@ -219,13 +275,7 @@ export default function HowToConnect() {
       <CityRunnerBackground navHeight={70} scrollYProgress={scrollYProgress} />
 
       {/* ✅ Contenuto sopra (z-10) */}
-      <section
-        ref={scrollAreaRef}
-        className="relative z-10 space-y-6"
-        style={{ zIndex: 10 }}
-      >
-        {/* Range scroll per animazione */}
-
+      <section ref={scrollAreaRef} className="relative z-10 space-y-6">
         <div className="pt-6 space-y-6">
           <header className="space-y-3 relative">
             <div className="flex items-start gap-3">
@@ -245,31 +295,7 @@ export default function HowToConnect() {
             </div>
           </header>
 
-          {/* MOBILE */}
-          <div className="md:hidden relative">
-            <div className="relative mt-6 overflow-hidden">
-              <div
-                className="flex items-stretch gap-4 overflow-x-auto pb-4 snap-x snap-mandatory pr-6"
-                style={{ WebkitOverflowScrolling: "touch" }}
-              >
-                {steps.map((step) => (
-                  <div
-                    key={step.id}
-                    className="snap-center shrink-0 w-[88%] max-w-[88%]"
-                  >
-                    <StepCard step={step} />
-                  </div>
-                ))}
-              </div>
-
-              <p className="mt-1 text-[11px] text-[var(--color-text-muted)] flex items-center gap-2">
-                <ArrowLeftRight className="h-4 w-4" />
-                Scorri a destra/sinistra per vedere i passaggi.
-              </p>
-            </div>
-          </div>
-
-          {/* DESKTOP */}
+          {/* CAROSSELLO COME INIZIATO PRIMA... */}
           <div className="relative mt-8 overflow-hidden hidden md:block">
             <motion.div
               className="flex items-stretch gap-4 md:gap-6"
@@ -282,6 +308,8 @@ export default function HowToConnect() {
               }}
               onMouseEnter={() => setIsPaused(true)}
               onMouseLeave={() => setIsPaused(false)}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
             >
               {loopedSteps.map((step, index) => (
                 <div
@@ -315,6 +343,9 @@ export default function HowToConnect() {
               Apri Discord
             </a>
           </div>
+
+          {/* Sezione Social */}
+          <SocialContacts />
         </div>
       </section>
     </div>
