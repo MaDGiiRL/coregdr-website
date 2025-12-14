@@ -22,6 +22,7 @@ import logo from "../assets/img/logo.png";
 import { useAuth } from "../context/AuthContext";
 import { signInWithDiscord, signOut } from "../lib/auth";
 import { alertError, confirmAction, toast } from "../lib/alerts";
+import { supabase } from "../lib/supabaseClient";
 
 const linkBase =
   "px-3 py-2 text-sm md:text-base rounded-full transition border border-transparent inline-flex items-center gap-2";
@@ -56,6 +57,30 @@ function buildDiscordAvatarUrl(meta) {
 
   return null;
 }
+
+// ---------------- LOG HELPER ----------------
+const safeMeta = (obj) => {
+  try {
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeLog = async (type, message, meta = {}) => {
+  try {
+    await supabase.from("logs").insert({
+      type,
+      message,
+      meta: safeMeta(meta),
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    // non blocca mai la UI
+    console.debug("[NAVBAR LOG]", e?.message || e);
+  }
+};
+// -------------------------------------------
 
 export default function Navbar() {
   const {
@@ -171,6 +196,11 @@ export default function Navbar() {
     if (!ok) return;
 
     try {
+      await writeLog("AUTH_LOGOUT", "Logout utente", {
+        user_id: profile?.id,
+        discord_id: profile?.discord_id,
+      });
+
       await signOut();
       setUserOpen(false);
       setNotifOpen(false);
@@ -187,10 +217,17 @@ export default function Navbar() {
     }
   };
 
-  const closeAllAndGo = (to) => {
+  const closeAllAndGo = async (to) => {
     setMobileOpen(false);
     setUserOpen(false);
     setNotifOpen(false);
+
+    await writeLog("NAVIGATE", `Navigazione verso ${to}`, {
+      user_id: profile?.id,
+      discord_id: profile?.discord_id,
+      to,
+    });
+
     navigate(to);
   };
 
@@ -230,10 +267,12 @@ export default function Navbar() {
         {/* LOGO */}
         <Link
           to="/"
-          onClick={() => {
+          onClick={async () => {
             setMobileOpen(false);
             setUserOpen(false);
             setNotifOpen(false);
+
+            await writeLog("NAV_LINK", "Click logo (Home)", { to: "/" });
           }}
           className="flex items-center gap-2"
         >
@@ -259,6 +298,11 @@ export default function Navbar() {
                 key={it.to}
                 to={it.to}
                 end={it.end}
+                onClick={() =>
+                  writeLog("NAV_LINK", `Click menu: ${it.label}`, {
+                    to: it.to,
+                  })
+                }
                 className={({ isActive }) =>
                   `${linkBase} ${isActive ? linkActive : linkInactive}`
                 }
@@ -275,10 +319,12 @@ export default function Navbar() {
           {/* MOBILE hamburger */}
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               setMobileOpen(true);
               setUserOpen(false);
               setNotifOpen(false);
+
+              await writeLog("UI", "Apertura mobile drawer");
             }}
             className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 hover:bg-[var(--color-surface)] transition"
             aria-label="Apri menu"
@@ -290,9 +336,13 @@ export default function Navbar() {
           {isLoggedIn && (
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 setNotifOpen((p) => !p);
                 setUserOpen(false);
+
+                await writeLog("NOTIF_OPEN", "Toggle pannello notifiche", {
+                  unread: unreadCount,
+                });
               }}
               className="relative hidden md:inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 hover:bg-[var(--color-surface)] transition"
               aria-label="Notifiche"
@@ -313,7 +363,10 @@ export default function Navbar() {
             ) : !isLoggedIn ? (
               <button
                 type="button"
-                onClick={signInWithDiscord}
+                onClick={async () => {
+                  await writeLog("AUTH_LOGIN", "Tentativo login Discord");
+                  signInWithDiscord();
+                }}
                 className="px-4 py-2 rounded-full text-xs md:text-sm font-medium bg-[var(--blue)] text-[#050816] shadow-lg hover:brightness-110 transition inline-flex items-center gap-2"
               >
                 <LogIn className="w-4 h-4" />
@@ -323,10 +376,12 @@ export default function Navbar() {
               <div className="relative" ref={userRef}>
                 <button
                   type="button"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
                     setUserOpen((p) => !p);
                     setNotifOpen(false);
+
+                    await writeLog("UI", "Toggle dropdown utente");
                   }}
                   className="flex items-center gap-2 px-2 py-1.5 md:px-3 md:py-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/80 hover:bg-[var(--color-surface)] transition text-xs md:text-sm"
                 >
@@ -470,7 +525,13 @@ export default function Navbar() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={markAllNotificationsRead}
+                    onClick={async () => {
+                      await writeLog(
+                        "NOTIF_READ_ALL",
+                        "Tutte le notifiche segnate come lette"
+                      );
+                      markAllNotificationsRead();
+                    }}
                     className="px-3 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5 text-xs"
                   >
                     Segna tutte lette
@@ -491,7 +552,12 @@ export default function Navbar() {
                     <button
                       key={n.id}
                       type="button"
-                      onClick={() => markNotificationRead(n.id)}
+                      onClick={async () => {
+                        await writeLog("NOTIF_READ", "Notifica letta", {
+                          notification_id: n.id,
+                        });
+                        markNotificationRead(n.id);
+                      }}
                       className={`w-full text-left rounded-xl border px-3 py-3 transition ${
                         n.read_at
                           ? "border-[var(--color-border)] bg-black/20"
@@ -574,7 +640,14 @@ export default function Navbar() {
                       key={it.to}
                       to={it.to}
                       end={it.end}
-                      onClick={() => setMobileOpen(false)}
+                      onClick={async () => {
+                        setMobileOpen(false);
+                        await writeLog(
+                          "NAV_LINK",
+                          `Click menu mobile: ${it.label}`,
+                          { to: it.to }
+                        );
+                      }}
                       className={({ isActive }) =>
                         `w-full px-3 py-3 rounded-2xl border transition flex items-center gap-2 ${
                           isActive
@@ -596,8 +669,12 @@ export default function Navbar() {
                 ) : !isLoggedIn ? (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       setMobileOpen(false);
+                      await writeLog(
+                        "AUTH_LOGIN",
+                        "Tentativo login Discord (mobile)"
+                      );
                       signInWithDiscord();
                     }}
                     className="w-full px-4 py-3 rounded-2xl bg-[var(--blue)] text-[#050816] font-semibold shadow-md hover:brightness-110 transition inline-flex items-center justify-center gap-2"
@@ -610,10 +687,16 @@ export default function Navbar() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
                           setMobileOpen(false);
                           setNotifOpen(true);
                           setUserOpen(false);
+
+                          await writeLog(
+                            "NOTIF_OPEN",
+                            "Apertura notifiche da mobile drawer",
+                            { unread: unreadCount }
+                          );
                         }}
                         className="relative inline-flex items-center justify-center h-11 w-11 rounded-2xl border border-[var(--color-border)] bg-white/5 hover:bg-white/10 transition"
                         aria-label="Notifiche"

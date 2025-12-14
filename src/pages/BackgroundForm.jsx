@@ -9,39 +9,86 @@ import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 export const MAX_STORIA = 5000;
 export const MAX_CONDANNE = 10;
 
+/* ---------------------------------------------
+   ✅ LOG HELPER
+---------------------------------------------- */
+const safeMeta = (obj) => {
+  try {
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeLog = async (type, message, meta = {}) => {
+  try {
+    await supabase.from("logs").insert({
+      type,
+      message,
+      meta: safeMeta(meta),
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.debug("[LOG]", e?.message || e);
+  }
+};
+
+/* ---------------------------------------------
+   ✅ HOOK PROCURA (con error handling + env base)
+---------------------------------------------- */
 export const usePenalCode = () => {
   const [articoli, setArticoli] = useState([]);
   const [categorie, setCategorie] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const resArticoli = await fetch(
-          "http://localhost:3001/api/procura/articoli"
-        );
-        if (!resArticoli.ok) throw new Error(`HTTP ${resArticoli.status}`);
-        const articoliData = await resArticoli.json();
+    const ctrl = new AbortController();
 
-        const resCategorie = await fetch(
-          "http://localhost:3001/api/procura/articoli/categorie"
-        );
-        if (!resCategorie.ok) throw new Error(`HTTP ${resCategorie.status}`);
+    const loadData = async () => {
+      setLoading(true);
+      setErrorMsg("");
+
+      try {
+        const base =
+          import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:3001";
+
+        const [resArticoli, resCategorie] = await Promise.all([
+          fetch(`${base}/api/procura/articoli`, { signal: ctrl.signal }),
+          fetch(`${base}/api/procura/articoli/categorie`, {
+            signal: ctrl.signal,
+          }),
+        ]);
+
+        if (!resArticoli.ok)
+          throw new Error(`Articoli HTTP ${resArticoli.status}`);
+        if (!resCategorie.ok)
+          throw new Error(`Categorie HTTP ${resCategorie.status}`);
+
+        const articoliData = await resArticoli.json();
         const categorieData = await resCategorie.json();
 
         setArticoli(Array.isArray(articoliData) ? articoliData : []);
         setCategorie(Array.isArray(categorieData) ? categorieData : []);
       } catch (err) {
+        if (err?.name === "AbortError") return;
+
         console.error("Fetch error:", err);
+        setArticoli([]);
+        setCategorie([]);
+        setErrorMsg(
+          "Servizio Procura non disponibile (errore server). Riprova più tardi."
+        );
       } finally {
         setLoading(false);
       }
     };
 
     loadData();
+    return () => ctrl.abort();
   }, []);
 
-  return { articoli, categorie, loading };
+  return { articoli, categorie, loading, errorMsg };
 };
 
 export const ListItemSchema = z.object({
@@ -155,7 +202,7 @@ const getInitialForm = () => ({
    CONDANNE PENALI: UN SOLO BOX CON NAVIGAZIONE
 ------------------------------------------------------*/
 function CondannePenaliSwitcher({ value = [], onChange }) {
-  const { articoli, categorie, loading } = usePenalCode();
+  const { articoli, categorie, loading, errorMsg } = usePenalCode();
 
   const filteredCategorie = useMemo(
     () => (categorie || []).filter((c) => Number(c.id) <= 7),
@@ -190,6 +237,18 @@ function CondannePenaliSwitcher({ value = [], onChange }) {
       <div className="rounded-2xl border border-[var(--color-border)] bg-white/5 p-4">
         <p className="text-sm text-[var(--color-text-muted)]">
           Caricamento articoli…
+        </p>
+      </div>
+    );
+  }
+
+  // ✅ fallback UI quando backend fa 500
+  if (errorMsg) {
+    return (
+      <div className="rounded-2xl border border-[var(--color-border)] bg-white/5 p-4">
+        <p className="text-sm text-rose-300 font-semibold">⚠️ {errorMsg}</p>
+        <p className="text-xs text-[var(--color-text-muted)] mt-2">
+          Puoi comunque compilare il resto del background.
         </p>
       </div>
     );
@@ -426,9 +485,25 @@ export default function BackgroundForm() {
     }));
   };
 
+  // ✅ LOG: apertura pagina form
+  useEffect(() => {
+    if (profile) {
+      writeLog("BG_FORM_OPEN", "Apertura form background", {
+        user_id: profile.id,
+      });
+    }
+  }, [profile]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitStatus(null);
+
+    // ✅ LOG: tentativo submit
+    if (profile?.id) {
+      await writeLog("BG_SUBMIT_ATTEMPT", "Tentativo invio background", {
+        user_id: profile.id,
+      });
+    }
 
     if (loading) {
       await Swal.fire({
@@ -443,6 +518,10 @@ export default function BackgroundForm() {
 
     if (!session || !profile) {
       setSubmitStatus("error");
+
+      // ✅ LOG: submit senza sessione
+      await writeLog("BG_SUBMIT_NO_SESSION", "Invio BG senza sessione", {});
+
       await Swal.fire({
         icon: "warning",
         title: "Non sei loggato",
@@ -459,6 +538,16 @@ export default function BackgroundForm() {
         .map((i) => `• ${i.message}`)
         .join("<br/>");
       setSubmitStatus("error");
+
+      // ✅ LOG: invalid
+      await writeLog("BG_SUBMIT_INVALID", "Invio background con errori", {
+        user_id: profile.id,
+        errors: parsed.error.issues.map((i) => ({
+          path: i.path?.join("."),
+          message: i.message,
+        })),
+      });
+
       await Swal.fire({
         icon: "error",
         title: "Dati non validi",
@@ -493,7 +582,20 @@ export default function BackgroundForm() {
         color: "#e5e7eb",
       });
 
-      if (!result.isConfirmed) return;
+      if (!result.isConfirmed) {
+        // ✅ LOG: annullato dopo warning
+        await writeLog("BG_SUBMIT_CANCEL", "Invio annullato dall'utente", {
+          user_id: profile.id,
+          missing,
+        });
+        return;
+      }
+
+      // ✅ LOG: confermato nonostante missing
+      await writeLog("BG_SUBMIT_FORCE", "Invio confermato con campi mancanti", {
+        user_id: profile.id,
+        missing,
+      });
     }
 
     setIsSubmitting(true);
@@ -524,6 +626,14 @@ export default function BackgroundForm() {
       if (error) {
         console.error("Errore durante l'invio:", error);
         setSubmitStatus("error");
+
+        // ✅ LOG: errore insert
+        await writeLog("BG_SUBMIT_ERROR", "Errore invio background", {
+          user_id: profile.id,
+          error: error.message,
+          code: error.code || "n/a",
+        });
+
         await Swal.fire({
           icon: "error",
           title: "Errore durante l'invio",
@@ -541,6 +651,15 @@ export default function BackgroundForm() {
       }
 
       setSubmitStatus("ok");
+
+      // ✅ LOG: success
+      await writeLog("BG_SUBMIT_SUCCESS", "Background inviato", {
+        user_id: profile.id,
+        nome: `${payload.nome} ${payload.cognome}`,
+        status: "pending",
+        condanne_count: (payload.condanne_penali || []).length,
+      });
+
       await Swal.fire({
         icon: "success",
         title: "Background inviato!",
@@ -556,6 +675,13 @@ export default function BackgroundForm() {
     } catch (err) {
       console.error("Errore BG:", err);
       setSubmitStatus("error");
+
+      // ✅ LOG: catch generico
+      await writeLog("BG_SUBMIT_ERROR", "Errore imprevisto invio background", {
+        user_id: profile?.id,
+        error: err?.message || String(err),
+      });
+
       await Swal.fire({
         icon: "error",
         title: "Errore imprevisto",

@@ -42,7 +42,9 @@ body {
     width: 100%;
     overflow-x: hidden;
 }
-a, button {
+
+a,
+button {
     cursor: pointer;
     transition: all 0.2s ease-in-out;
 }
@@ -179,4 +181,82 @@ body {
     100% {
         transform: translate3d(0px, 0px, 0);
     }
+}
+
+/* =========================
+   Select / Form controls (palette)
+   ========================= */
+
+/* Base reset */
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+/* Select in palette */
+select {
+    width: 100%;
+    padding: 0.65rem 3.2rem 0.65rem 2rem;
+    /* ⬅️ più spazio a destra */
+
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--color-text);
+
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+
+    font-size: 0.9rem;
+    line-height: 1.2;
+
+    cursor: pointer;
+    white-space: nowrap;
+    /* evita wrapping sotto icona */
+    text-overflow: ellipsis;
+    /* tronca se troppo lungo */
+    overflow: hidden;
+
+    transition:
+        border-color 0.15s ease,
+        box-shadow 0.15s ease,
+        background-color 0.15s ease,
+        transform 0.06s ease;
+}
+
+
+/* Chevron custom */
+select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' stroke='%2335D2FF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1.1rem center;
+    background-size: 1rem;
+}
+
+/* Hover / Focus */
+select:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(53, 210, 255, 0.55);
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--color-accent-cool);
+    box-shadow: 0 0 0 2px rgba(53, 210, 255, 0.25);
+}
+
+select:active {
+    transform: translateY(1px);
+}
+
+/* Disabled */
+select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background-image: none;
+}
+
+/* Option dropdown (best-effort, browser limits apply) */
+select option {
+    background-color: #181a33;
+    color: var(--color-text);
 }

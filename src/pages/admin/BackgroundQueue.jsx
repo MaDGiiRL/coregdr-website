@@ -69,6 +69,14 @@ const RoleBadge = ({ role }) => (
 // Normalizzazione Job (debug filtro)
 const normalizeJob = (job) => (job || "").toString().trim().toLowerCase();
 
+const safeMeta = (obj) => {
+  try {
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+};
+
 export default function BackgroundQueue() {
   const { profile, loading } = useAuth();
   const reduce = useReducedMotion();
@@ -131,6 +139,21 @@ export default function BackgroundQueue() {
 
   const softPanel =
     "rounded-2xl border border-[var(--color-border)] bg-black/20";
+
+  // ✅ LOG WRITER (solo logica)
+  const writeLog = async (type, message, meta = {}) => {
+    try {
+      await supabase.from("logs").insert({
+        type,
+        message,
+        meta: safeMeta(meta),
+        created_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      // non bloccare la UI se i log falliscono
+      console.debug("[LOGS] writeLog failed:", e?.message || e);
+    }
+  };
 
   const loadBackgrounds = async () => {
     setLoadingData(true);
@@ -428,6 +451,19 @@ export default function BackgroundQueue() {
         },
       ]);
 
+      // ✅ LOG
+      await writeLog(
+        "BG_COMMENT",
+        `Commento staff su BG ${selected.id} (${selected.nome} ${selected.cognome})`,
+        {
+          character_id: selected.id,
+          user_id: selected.userId,
+          author_id: profile.id,
+          author_role: isAdmin ? "ADMIN" : "WHITELISTER",
+          preview: commentDraft.trim().slice(0, 140),
+        }
+      );
+
       setCommentDraft("");
       toast("success", "Commento inviato");
     } finally {
@@ -485,6 +521,50 @@ export default function BackgroundQueue() {
             : item
         )
       );
+
+      // ✅ LOG
+      if (status === "approved") {
+        await writeLog(
+          "BG_APPROVE",
+          `BG approvato: ${current?.nome ?? ""} ${
+            current?.cognome ?? ""
+          }`.trim(),
+          {
+            character_id: id,
+            user_id: current?.userId,
+            staff_id: profile.id,
+          }
+        );
+      }
+
+      if (status === "rejected") {
+        await writeLog(
+          "BG_REJECT",
+          `BG rifiutato: ${current?.nome ?? ""} ${
+            current?.cognome ?? ""
+          }`.trim(),
+          {
+            character_id: id,
+            user_id: current?.userId,
+            staff_id: profile.id,
+            reason: (rejectionReason || "").slice(0, 200),
+          }
+        );
+      }
+
+      if (status === "pending") {
+        await writeLog(
+          "BG_STATUS",
+          `BG riportato in pending: ${current?.nome ?? ""} ${
+            current?.cognome ?? ""
+          }`.trim(),
+          {
+            character_id: id,
+            user_id: current?.userId,
+            staff_id: profile.id,
+          }
+        );
+      }
 
       toast(
         "success",
@@ -563,7 +643,7 @@ export default function BackgroundQueue() {
 
     setRejectSending(true);
     try {
-      // 1) status + rejection_reason
+      // 1) status + rejection_reason (log già dentro updateStatus)
       await updateStatus(selected.id, "rejected", reason);
 
       // 2) salva anche come commento storico
@@ -595,6 +675,19 @@ export default function BackgroundQueue() {
             authorRole: isAdmin ? "Admin" : "Whitelister",
           },
         ]);
+
+        // ✅ LOG extra (commento rifiuto come commento)
+        await writeLog(
+          "BG_COMMENT",
+          `Motivazione rifiuto salvata nei commenti (BG ${selected.id})`,
+          {
+            character_id: selected.id,
+            user_id: selected.userId,
+            author_id: profile.id,
+            author_role: isAdmin ? "ADMIN" : "WHITELISTER",
+            preview: reason.slice(0, 140),
+          }
+        );
       }
 
       setRejectOpen(false);
@@ -712,6 +805,17 @@ export default function BackgroundQueue() {
         )
       );
 
+      // ✅ LOG
+      await writeLog(
+        "BG_EDIT",
+        `Testo BG modificato: ${selected.nome} ${selected.cognome}`,
+        {
+          character_id: selected.id,
+          user_id: selected.userId,
+          staff_id: profile.id,
+        }
+      );
+
       setEditMode(false);
       toast("success", "Modifiche salvate");
     } finally {
@@ -754,6 +858,18 @@ export default function BackgroundQueue() {
               }
             : it
         )
+      );
+
+      // ✅ LOG
+      await writeLog(
+        "BG_JOB_UPDATE",
+        `Job aggiornato su BG ${selected.id} (${selected.nome} ${selected.cognome})`,
+        {
+          character_id: selected.id,
+          user_id: selected.userId,
+          staff_id: profile.id,
+          job: (nextJob || "").slice(0, 80),
+        }
       );
 
       toast("success", nextJob ? "Job aggiornato" : "Job rimosso");

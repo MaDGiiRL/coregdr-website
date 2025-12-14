@@ -14,6 +14,7 @@ import {
   Server,
   Briefcase,
   Search,
+  Plug,
 } from "lucide-react";
 
 import BackgroundQueue from "./BackgroundQueue";
@@ -26,45 +27,97 @@ const PAGE_SIZE_FULL = 30;
 
 const normalizeJob = (job) => (job || "").toString().trim().toLowerCase();
 
-const statusPill = (status) => {
-  switch (status) {
-    case "pending":
-      return "bg-yellow-400/15 text-yellow-300 border-yellow-400/40";
-    case "approved":
-      return "bg-emerald-400/15 text-emerald-300 border-emerald-400/40";
-    case "rejected":
-      return "bg-red-400/15 text-red-300 border-red-400/40";
-    default:
-      return "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]";
+const safeMeta = (obj) => {
+  try {
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
   }
 };
 
-const rolePill = (role) => {
-  switch (role) {
-    case "Admin":
-      return "bg-gradient-to-r from-[var(--violet)]/25 to-fuchsia-400/10 text-white border-[var(--violet-soft)] shadow-[0_0_0_1px_rgba(124,92,255,0.25)]";
-    case "Whitelister":
-      return "bg-gradient-to-r from-amber-400/20 to-amber-400/5 text-amber-200 border-amber-400/40 shadow-[0_0_0_1px_rgba(251,191,36,0.18)]";
-    default:
-      return "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]";
-  }
+// ---------- BADGES (UI) ----------
+const badgeBase =
+  "inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-semibold whitespace-nowrap";
+
+const BADGE = {
+  // roles
+  role_admin:
+    "bg-gradient-to-r from-fuchsia-500/25 to-violet-500/10 text-white border-fuchsia-400/35 shadow-[0_0_0_1px_rgba(217,70,239,0.16)]",
+  role_whitelister:
+    "bg-gradient-to-r from-amber-400/20 to-orange-400/10 text-amber-200 border-amber-400/35 shadow-[0_0_0_1px_rgba(251,191,36,0.14)]",
+  role_user:
+    "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]",
+
+  // background status
+  bg_pending:
+    "bg-yellow-400/15 text-yellow-300 border-yellow-400/40 shadow-[0_0_0_1px_rgba(250,204,21,0.12)]",
+  bg_approved:
+    "bg-emerald-400/15 text-emerald-300 border-emerald-400/40 shadow-[0_0_0_1px_rgba(52,211,153,0.12)]",
+  bg_rejected:
+    "bg-rose-400/15 text-rose-300 border-rose-400/40 shadow-[0_0_0_1px_rgba(251,113,133,0.12)]",
+  bg_none:
+    "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]",
+
+  // job
+  job: "bg-cyan-400/10 text-cyan-200 border-cyan-400/25 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]",
+
+  // logs type
+  log_generic:
+    "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]",
+  log_auth: "bg-sky-400/10 text-sky-200 border-sky-400/25",
+  log_dash: "bg-violet-400/10 text-violet-200 border-violet-400/25",
+  log_notif: "bg-teal-400/10 text-teal-200 border-teal-400/25",
+  log_error: "bg-rose-400/15 text-rose-300 border-rose-400/35",
+
+  // server logs
+  srv_generic:
+    "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]",
+  srv_plugin: "bg-indigo-400/10 text-indigo-200 border-indigo-400/25",
+  srv_resource: "bg-emerald-400/10 text-emerald-200 border-emerald-400/25",
 };
 
-const RoleBadge = ({ role }) => {
-  const Icon =
-    role === "Admin" ? Crown : role === "Whitelister" ? BadgeCheck : UserCog;
+const Badge = ({ variant = "log_generic", icon: Icon, children, title }) => (
+  <span
+    className={`${badgeBase} ${BADGE[variant] || BADGE.log_generic}`}
+    title={title}
+  >
+    {Icon ? <Icon className="w-3.5 h-3.5" /> : null}
+    <span className="truncate">{children}</span>
+  </span>
+);
 
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] ${rolePill(
-        role
-      )}`}
-    >
-      <Icon className="w-3.5 h-3.5" />
-      <span className="font-semibold">{role}</span>
-    </span>
-  );
+const roleVariant = (role) =>
+  role === "Admin"
+    ? "role_admin"
+    : role === "Whitelister"
+    ? "role_whitelister"
+    : "role_user";
+
+const bgVariant = (status) =>
+  status === "pending"
+    ? "bg_pending"
+    : status === "approved"
+    ? "bg_approved"
+    : status === "rejected"
+    ? "bg_rejected"
+    : "bg_none";
+
+const logVariant = (type) => {
+  const t = (type || "").toString().toUpperCase();
+  if (t.includes("ERROR") || t.includes("FAIL")) return "log_error";
+  if (t.startsWith("AUTH")) return "log_auth";
+  if (t.startsWith("DASH")) return "log_dash";
+  if (t.startsWith("NOTIF")) return "log_notif";
+  return "log_generic";
 };
+
+const srvVariant = (pluginType) => {
+  const t = (pluginType || "").toString().toUpperCase();
+  if (t.includes("PLUGIN")) return "srv_plugin";
+  if (t.includes("RESOURCE")) return "srv_resource";
+  return "srv_generic";
+};
+// -------------------------------
 
 export default function AdminDashboard() {
   const { profile, loading: authLoading } = useAuth();
@@ -111,14 +164,53 @@ export default function AdminDashboard() {
   const [logsPage, setLogsPage] = useState(1);
   const [serverLogsPage, setServerLogsPage] = useState(1);
 
-  // ✅ filtro JOB (al posto del filtro gruppo)
+  // ✅ filtro JOB
   const [jobFilter, setJobFilter] = useState("ALL");
   const [userSearch, setUserSearch] = useState("");
+
+  // ✅ nuovi filtri “categoria”
+  const [roleFilter, setRoleFilter] = useState("ALL"); // ALL | Admin | Whitelister | User
+  const [bgFilter, setBgFilter] = useState("ALL"); // ALL | pending | approved | rejected | none
+
+  const [logTypeFilter, setLogTypeFilter] = useState("ALL");
+  const [logSearch, setLogSearch] = useState("");
+
+  const [srvTypeFilter, setSrvTypeFilter] = useState("ALL");
+  const [srvSearch, setSrvSearch] = useState("");
 
   const shellCard =
     "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur shadow-[0_18px_60px_rgba(0,0,0,0.35)]";
   const softPanel =
     "rounded-2xl border border-[var(--color-border)] bg-black/20";
+
+  // ✅ writer log (fallback se la colonna meta non esiste)
+  const writeLog = async (type, message, meta = {}) => {
+    try {
+      const res = await supabase.from("logs").insert({
+        type,
+        message,
+        meta: safeMeta(meta),
+        created_at: new Date().toISOString(),
+      });
+      if (res?.error) {
+        await supabase.from("logs").insert({
+          type,
+          message,
+          created_at: new Date().toISOString(),
+        });
+      }
+    } catch (e) {
+      try {
+        await supabase.from("logs").insert({
+          type,
+          message,
+          created_at: new Date().toISOString(),
+        });
+      } catch (e2) {
+        console.debug("[LOGS] writeLog failed:", e2?.message || e2);
+      }
+    }
+  };
 
   const paginate = (items, page, pageSize) => {
     const start = (page - 1) * pageSize;
@@ -159,19 +251,21 @@ export default function AdminDashboard() {
         approvedBgRes,
         rejectedBgRes,
       ] = await Promise.all([
-        supabase.from("profiles").select("*", { count: "exact", head: true }),
-        supabase.from("characters").select("*", { count: "exact", head: true }),
+        supabase.from("profiles").select("id", { count: "exact", head: true }),
         supabase
           .from("characters")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true }),
+        supabase
+          .from("characters")
+          .select("id", { count: "exact", head: true })
           .eq("status", "pending"),
         supabase
           .from("characters")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("status", "approved"),
         supabase
           .from("characters")
-          .select("*", { count: "exact", head: true })
+          .select("id", { count: "exact", head: true })
           .eq("status", "rejected"),
       ]);
 
@@ -201,11 +295,9 @@ export default function AdminDashboard() {
         console.error(usersError);
         await alertError("Errore", "Impossibile caricare la lista utenti.");
       } else {
-        // ✅ per collegare "Gruppo" al Job:
-        // prendiamo il job più recente per user dalla tabella characters
         const { data: charsData, error: charsErr } = await supabase
           .from("characters")
-          .select("id, user_id, status, created_at, job")
+          .select("user_id, status, created_at, job")
           .order("created_at", { ascending: false });
 
         if (charsErr) console.error(charsErr);
@@ -238,13 +330,15 @@ export default function AdminDashboard() {
         setUsers(
           (usersData || []).map((u) => {
             const st = statsMap.get(u.id);
+            const bgStatus = latestBgByUser.get(u.id) ?? "none";
+            const job = latestJobByUser.get(u.id) ?? "";
             return {
               id: u.id,
               discordName: u.discord_username ?? "Senza nome",
               joinedAt: u.created_at,
-              bgStatus: latestBgByUser.get(u.id) ?? "none",
-              job: latestJobByUser.get(u.id) ?? "",
-              jobNorm: normalizeJob(latestJobByUser.get(u.id) ?? ""),
+              bgStatus,
+              job,
+              jobNorm: normalizeJob(job),
               isMod: !!u.is_moderator,
               isAdmin: !!u.is_admin,
               lastServerJoinAt: st?.lastServerJoinAt ?? null,
@@ -305,6 +399,49 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, isAdmin]);
 
+  // ✅ poll leggero logs quando sei in overview/logs
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (loadingData) return;
+
+    const shouldPoll = activeTab === "logs" || activeTab === "overview";
+    if (!shouldPoll) return;
+
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("logs")
+          .select("id, type, message, created_at")
+          .order("created_at", { ascending: false })
+          .limit(250);
+
+        if (!alive) return;
+        if (!error) {
+          setLogs(
+            (data || []).map((l) => ({
+              id: l.id,
+              type: l.type ?? "GENERIC",
+              message: l.message ?? "",
+              createdAt: l.created_at,
+            }))
+          );
+        }
+      } catch (e) {
+        console.debug("[LOGS] poll failed:", e?.message || e);
+      }
+    };
+
+    tick();
+    const t = setInterval(tick, 8000);
+
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [isAdmin, activeTab, loadingData]);
+
   // ✅ opzioni filtro JOB
   const jobOptions = useMemo(() => {
     const map = new Map(); // norm->display
@@ -322,13 +459,17 @@ export default function AdminDashboard() {
     return [{ norm: "ALL", display: "Tutti i job" }, ...list];
   }, [users]);
 
+  const roleLabel = (u) =>
+    u.isAdmin ? "Admin" : u.isMod ? "Whitelister" : "User";
+
+  // ✅ USERS: filtro completo (search + job + role + bgStatus)
   const filteredUsers = useMemo(() => {
     let base = users;
 
     const q = userSearch.trim().toLowerCase();
     if (q) {
       base = base.filter((u) => {
-        const hay = [u.discordName, u.id, u.job]
+        const hay = [u.discordName, u.id, u.job, u.bgStatus]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -336,16 +477,79 @@ export default function AdminDashboard() {
       });
     }
 
-    if (jobFilter !== "ALL") {
-      base = base.filter((u) => u.jobNorm === jobFilter);
+    if (jobFilter !== "ALL") base = base.filter((u) => u.jobNorm === jobFilter);
+    if (roleFilter !== "ALL")
+      base = base.filter((u) => roleLabel(u) === roleFilter);
+    if (bgFilter !== "ALL")
+      base = base.filter((u) => (u.bgStatus || "none") === bgFilter);
+
+    return base;
+  }, [users, userSearch, jobFilter, roleFilter, bgFilter]);
+
+  // ✅ LOGS: opzioni + filtro
+  const logTypeOptions = useMemo(() => {
+    const set = new Set(
+      (logs || []).map((l) => (l.type || "GENERIC").toString())
+    );
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b));
+    return ["ALL", ...list];
+  }, [logs]);
+
+  const filteredLogs = useMemo(() => {
+    let base = logs;
+
+    const q = logSearch.trim().toLowerCase();
+    if (q) {
+      base = base.filter((l) => {
+        const hay = [l.type, l.message].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    if (logTypeFilter !== "ALL") {
+      base = base.filter((l) => (l.type || "GENERIC") === logTypeFilter);
     }
 
     return base;
-  }, [users, userSearch, jobFilter]);
+  }, [logs, logSearch, logTypeFilter]);
 
-  useEffect(() => {
-    setUsersPage(1);
-  }, [jobFilter, userSearch]);
+  // ✅ SERVER LOGS: opzioni + filtro
+  const srvTypeOptions = useMemo(() => {
+    const set = new Set(
+      (serverLogs || []).map((l) => (l.plugin_type || "GENERIC").toString())
+    );
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b));
+    return ["ALL", ...list];
+  }, [serverLogs]);
+
+  const filteredServerLogs = useMemo(() => {
+    let base = serverLogs;
+
+    const q = srvSearch.trim().toLowerCase();
+    if (q) {
+      base = base.filter((l) => {
+        const hay = [l.plugin, l.plugin_type, l.description]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    if (srvTypeFilter !== "ALL") {
+      base = base.filter((l) => (l.plugin_type || "GENERIC") === srvTypeFilter);
+    }
+
+    return base;
+  }, [serverLogs, srvSearch, srvTypeFilter]);
+
+  // ✅ reset pagine quando cambiano filtri
+  useEffect(
+    () => setUsersPage(1),
+    [jobFilter, userSearch, roleFilter, bgFilter]
+  );
+  useEffect(() => setLogsPage(1), [logTypeFilter, logSearch]);
+  useEffect(() => setServerLogsPage(1), [srvTypeFilter, srvSearch]);
 
   const overviewUsersTotalPages = Math.max(
     1,
@@ -360,25 +564,25 @@ export default function AdminDashboard() {
     1,
     Math.ceil(filteredUsers.length / PAGE_SIZE_FULL)
   );
-  const logsTotalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE_FULL));
+  const logsTotalPages = Math.max(
+    1,
+    Math.ceil(filteredLogs.length / PAGE_SIZE_FULL)
+  );
   const serverLogsTotalPages = Math.max(
     1,
-    Math.ceil(serverLogs.length / PAGE_SIZE_FULL)
+    Math.ceil(filteredServerLogs.length / PAGE_SIZE_FULL)
   );
 
   const overviewUsers = paginate(users, overviewUsersPage, PAGE_SIZE_OVERVIEW);
   const overviewLogs = paginate(logs, overviewLogsPage, PAGE_SIZE_OVERVIEW);
 
   const paginatedUsers = paginate(filteredUsers, usersPage, PAGE_SIZE_FULL);
-  const paginatedLogs = paginate(logs, logsPage, PAGE_SIZE_FULL);
+  const paginatedLogs = paginate(filteredLogs, logsPage, PAGE_SIZE_FULL);
   const paginatedServerLogs = paginate(
-    serverLogs,
+    filteredServerLogs,
     serverLogsPage,
     PAGE_SIZE_FULL
   );
-
-  const roleLabel = (u) =>
-    u.isAdmin ? "Admin" : u.isMod ? "Whitelister" : "User";
 
   const pageAnim = {
     initial: { opacity: 0, y: reduce ? 0 : 10 },
@@ -414,8 +618,8 @@ export default function AdminDashboard() {
   const TabCount = (tabId) => {
     if (!isAdmin) return null;
     if (tabId === "users") return stats.totalUsers;
-    if (tabId === "logs") return logs.length;
-    if (tabId === "serverLogs") return serverLogs.length;
+    if (tabId === "logs") return filteredLogs.length;
+    if (tabId === "serverLogs") return filteredServerLogs.length;
     if (tabId === "backgrounds") return stats.pendingBackgrounds;
     return null;
   };
@@ -443,7 +647,13 @@ export default function AdminDashboard() {
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <RoleBadge role={staffRole} />
+              <Badge
+                variant={roleVariant(staffRole)}
+                icon={staffRole === "Admin" ? Crown : BadgeCheck}
+              >
+                {staffRole}
+              </Badge>
+
               <span className="px-3 py-1 rounded-full border border-[var(--color-border)] bg-black/20 text-[var(--color-text-muted)]">
                 Staff ID:{" "}
                 <span className="font-mono">
@@ -458,7 +668,17 @@ export default function AdminDashboard() {
               <motion.button
                 type="button"
                 whileTap={{ scale: reduce ? 1 : 0.97 }}
-                onClick={fetchData}
+                onClick={async () => {
+                  await writeLog(
+                    "DASH_REFRESH",
+                    "Admin ha aggiornato i dati dashboard",
+                    {
+                      staff_id: profile?.id,
+                      staff_discord_id: profile?.discord_id,
+                    }
+                  );
+                  await fetchData();
+                }}
                 className="px-4 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 hover:bg-white/5 text-xs md:text-sm font-semibold inline-flex items-center gap-2"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -468,7 +688,13 @@ export default function AdminDashboard() {
             <motion.button
               type="button"
               whileTap={{ scale: reduce ? 1 : 0.97 }}
-              onClick={() => setActiveTab("backgrounds")}
+              onClick={async () => {
+                setActiveTab("backgrounds");
+                await writeLog("DASH_GOTO_BG", "Vai ai background", {
+                  staff_id: profile?.id,
+                  staff_discord_id: profile?.discord_id,
+                });
+              }}
               className="px-4 py-2 rounded-2xl bg-[var(--violet)] text-white text-xs md:text-sm font-semibold shadow-md hover:brightness-110 inline-flex items-center gap-2"
             >
               <FileText className="w-4 h-4" />
@@ -490,7 +716,16 @@ export default function AdminDashboard() {
                 key={tab.id}
                 type="button"
                 whileTap={{ scale: reduce ? 1 : 0.985 }}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={async () => {
+                  setActiveTab(tab.id);
+                  if (isAdmin) {
+                    await writeLog("DASH_TAB", `Cambio tab: ${tab.id}`, {
+                      staff_id: profile?.id,
+                      staff_discord_id: profile?.discord_id,
+                      tab: tab.id,
+                    });
+                  }
+                }}
                 className={`px-3.5 py-2 rounded-2xl border transition inline-flex items-center gap-2 text-xs md:text-sm ${
                   isActive
                     ? "bg-white/5 border-[var(--violet-soft)] text-white shadow-[0_0_0_1px_rgba(124,92,255,0.25)]"
@@ -607,37 +842,63 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="space-y-2 max-h-[240px] overflow-y-auto">
-                    {overviewUsers.map((u) => (
-                      <div
-                        key={u.id}
-                        className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-xs md:text-sm font-semibold truncate">
-                              {u.discordName}
-                            </p>
-                            <p className="text-[10px] text-[var(--color-text-muted)]">
-                              Iscritto il{" "}
-                              {new Date(u.joinedAt).toLocaleString("it-IT", {
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              })}
-                            </p>
-                            <p className="text-[10px] text-[var(--color-text-muted)] truncate">
-                              Job:{" "}
-                              <span className="text-white/80 font-semibold">
-                                {u.job || "—"}
-                              </span>
-                            </p>
-                          </div>
+                    {overviewUsers.map((u) => {
+                      const currentRole = roleLabel(u);
+                      return (
+                        <div
+                          key={u.id}
+                          className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs md:text-sm font-semibold truncate">
+                                {u.discordName}
+                              </p>
+                              <p className="text-[10px] text-[var(--color-text-muted)]">
+                                Iscritto il{" "}
+                                {new Date(u.joinedAt).toLocaleString("it-IT", {
+                                  dateStyle: "short",
+                                  timeStyle: "short",
+                                })}
+                              </p>
 
-                          <div className="flex items-center gap-2">
-                            <RoleBadge role={roleLabel(u)} />
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Badge
+                                  variant={roleVariant(currentRole)}
+                                  icon={
+                                    currentRole === "Admin"
+                                      ? Crown
+                                      : currentRole === "Whitelister"
+                                      ? BadgeCheck
+                                      : UserCog
+                                  }
+                                >
+                                  {currentRole}
+                                </Badge>
+
+                                <Badge
+                                  variant={bgVariant(u.bgStatus)}
+                                  icon={FileText}
+                                  title="Stato background"
+                                >
+                                  {u.bgStatus === "none"
+                                    ? "BG: —"
+                                    : `BG: ${u.bgStatus}`}
+                                </Badge>
+
+                                <Badge
+                                  variant="job"
+                                  icon={Briefcase}
+                                  title="Job (dal background)"
+                                >
+                                  {u.job ? `Job: ${u.job}` : "Job: —"}
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {overviewUsers.length === 0 && (
                       <p className="text-xs text-[var(--color-text-muted)]">
@@ -699,9 +960,9 @@ export default function AdminDashboard() {
                         className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+                          <Badge variant={logVariant(l.type)} icon={Activity}>
                             {l.type}
-                          </span>
+                          </Badge>
                           <span className="text-[10px] text-[var(--color-text-muted)]">
                             {new Date(l.createdAt).toLocaleString("it-IT", {
                               dateStyle: "short",
@@ -785,7 +1046,7 @@ export default function AdminDashboard() {
                     <input
                       value={userSearch}
                       onChange={(e) => setUserSearch(e.target.value)}
-                      placeholder="Cerca utente (discord/id/job)"
+                      placeholder="Cerca utente (discord/id/job/bg)"
                       className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
                     />
                   </div>
@@ -806,6 +1067,37 @@ export default function AdminDashboard() {
                     </select>
                   </div>
 
+                  {/* role filter */}
+                  <div className="relative">
+                    <UserCog className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <select
+                      value={roleFilter}
+                      onChange={(e) => setRoleFilter(e.target.value)}
+                      className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                    >
+                      <option value="ALL">Tutti i ruoli</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Whitelister">Whitelister</option>
+                      <option value="User">User</option>
+                    </select>
+                  </div>
+
+                  {/* bg status filter */}
+                  <div className="relative">
+                    <FileText className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <select
+                      value={bgFilter}
+                      onChange={(e) => setBgFilter(e.target.value)}
+                      className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                    >
+                      <option value="ALL">Tutti BG</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="none">Nessun BG</option>
+                    </select>
+                  </div>
+
                   <span className="text-xs text-[var(--color-text-muted)]">
                     {buildRangeLabel(
                       filteredUsers.length,
@@ -819,6 +1111,7 @@ export default function AdminDashboard() {
               <div className="space-y-2 max-h-[520px] overflow-y-auto">
                 {paginatedUsers.map((u) => {
                   const currentRole = roleLabel(u);
+
                   return (
                     <div
                       key={u.id}
@@ -861,15 +1154,54 @@ export default function AdminDashboard() {
                               {u.id.slice(0, 8)}…
                             </span>
                           </p>
+
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge
+                              variant={roleVariant(currentRole)}
+                              icon={
+                                currentRole === "Admin"
+                                  ? Crown
+                                  : currentRole === "Whitelister"
+                                  ? BadgeCheck
+                                  : UserCog
+                              }
+                            >
+                              {currentRole}
+                            </Badge>
+
+                            <Badge
+                              variant={bgVariant(u.bgStatus)}
+                              icon={FileText}
+                              title="Stato background"
+                            >
+                              {u.bgStatus === "none"
+                                ? "BG: —"
+                                : `BG: ${u.bgStatus}`}
+                            </Badge>
+
+                            <Badge
+                              variant="job"
+                              icon={Briefcase}
+                              title="Job (dal background)"
+                            >
+                              {u.job ? `Job: ${u.job}` : "Job: —"}
+                            </Badge>
+                          </div>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 justify-end">
-                          <RoleBadge role={currentRole} />
+                          {/* spazio azioni future */}
                         </div>
                       </div>
                     </div>
                   );
                 })}
+
+                {paginatedUsers.length === 0 && (
+                  <p className="text-xs text-[var(--color-text-muted)] px-2 py-3">
+                    Nessun utente corrisponde ai filtri.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
@@ -914,8 +1246,40 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <span className="text-xs text-[var(--color-text-muted)]">
-                  {buildRangeLabel(logs.length, logsPage, PAGE_SIZE_FULL)}
+                  {buildRangeLabel(
+                    filteredLogs.length,
+                    logsPage,
+                    PAGE_SIZE_FULL
+                  )}
                 </span>
+              </div>
+
+              {/* filtri logs */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={logSearch}
+                    onChange={(e) => setLogSearch(e.target.value)}
+                    placeholder="Cerca nei log..."
+                    className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Activity className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <select
+                    value={logTypeFilter}
+                    onChange={(e) => setLogTypeFilter(e.target.value)}
+                    className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                  >
+                    {logTypeOptions.map((t) => (
+                      <option key={t} value={t}>
+                        {t === "ALL" ? "Tutti i type" : t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="space-y-2 max-h-[520px] overflow-y-auto">
@@ -925,9 +1289,9 @@ export default function AdminDashboard() {
                     className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
+                      <Badge variant={logVariant(l.type)} icon={Activity}>
                         {l.type}
-                      </span>
+                      </Badge>
                       <span className="text-[10px] text-[var(--color-text-muted)]">
                         {new Date(l.createdAt).toLocaleString("it-IT", {
                           dateStyle: "short",
@@ -935,11 +1299,17 @@ export default function AdminDashboard() {
                         })}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs md:text-sm text-[var(--color-text)]">
+                    <p className="mt-2 text-xs md:text-sm text-[var(--color-text)]">
                       {l.message}
                     </p>
                   </div>
                 ))}
+
+                {paginatedLogs.length === 0 && (
+                  <p className="text-xs text-[var(--color-text-muted)] px-2 py-3">
+                    Nessun log corrisponde ai filtri.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
@@ -985,11 +1355,39 @@ export default function AdminDashboard() {
                 </div>
                 <span className="text-xs text-[var(--color-text-muted)]">
                   {buildRangeLabel(
-                    serverLogs.length,
+                    filteredServerLogs.length,
                     serverLogsPage,
                     PAGE_SIZE_FULL
                   )}
                 </span>
+              </div>
+
+              {/* filtri server logs */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={srvSearch}
+                    onChange={(e) => setSrvSearch(e.target.value)}
+                    placeholder="Cerca plugin/type/descrizione..."
+                    className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Server className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <select
+                    value={srvTypeFilter}
+                    onChange={(e) => setSrvTypeFilter(e.target.value)}
+                    className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                  >
+                    {srvTypeOptions.map((t) => (
+                      <option key={t} value={t}>
+                        {t === "ALL" ? "Tutti i type" : t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="space-y-2 max-h-[520px] overflow-y-auto">
@@ -999,10 +1397,16 @@ export default function AdminDashboard() {
                     className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                          {l.plugin} - {l.plugin_type}
-                        </span>
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <Badge variant="srv_plugin" icon={Plug}>
+                          {l.plugin}
+                        </Badge>
+                        <Badge
+                          variant={srvVariant(l.plugin_type)}
+                          icon={Server}
+                        >
+                          {l.plugin_type}
+                        </Badge>
                       </div>
                       <span className="text-[10px] text-[var(--color-text-muted)]">
                         {new Date(l.createdAt).toLocaleString("it-IT", {
@@ -1019,8 +1423,8 @@ export default function AdminDashboard() {
                 ))}
 
                 {paginatedServerLogs.length === 0 && (
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Nessun log server disponibile.
+                  <p className="text-xs text-[var(--color-text-muted)] px-2 py-3">
+                    Nessun server log corrisponde ai filtri.
                   </p>
                 )}
               </div>

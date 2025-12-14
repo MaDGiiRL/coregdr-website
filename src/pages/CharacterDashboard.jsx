@@ -49,6 +49,30 @@ const statusCardClass = (status, isActive) => {
   }${ring}`;
 };
 
+/* ---------------------------------------------
+   ✅ LOG HELPER
+---------------------------------------------- */
+const safeMeta = (obj) => {
+  try {
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeLog = async (type, message, meta = {}) => {
+  try {
+    await supabase.from("logs").insert({
+      type,
+      message,
+      meta: safeMeta(meta),
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.debug("[LOG]", e?.message || e);
+  }
+};
+
 export default function CharacterDashboard() {
   const { profile, loading, session } = useAuth();
 
@@ -103,9 +127,21 @@ export default function CharacterDashboard() {
 
         setCharacters(data || []);
         setActiveCharacterId((prev) => prev ?? data?.[0]?.id ?? null);
+
+        // ✅ LOG: apertura dashboard + caricamento riuscito
+        await writeLog("BG_DASH_OPEN", "Apertura dashboard personaggi", {
+          user_id: profile.id,
+          count: (data || []).length,
+        });
       } catch (err) {
         console.error("Error loading characters", err);
         await alertError("Errore", "Errore imprevisto nel caricamento dati.");
+
+        // ✅ LOG: errore caricamento
+        await writeLog("BG_DASH_LOAD_ERROR", "Errore caricamento personaggi", {
+          user_id: profile.id,
+          error: err?.message || String(err),
+        });
       } finally {
         setLoadingChars(false);
       }
@@ -172,6 +208,13 @@ export default function CharacterDashboard() {
       aspettiCaratteriali: activeCharacter.aspetti_caratteriali || "",
     });
     setEditModeUser(true);
+
+    // ✅ LOG: inizio modifica
+    await writeLog("BG_EDIT_START", "Inizio modifica background", {
+      user_id: profile.id,
+      character_id: activeCharacter.id,
+      status_before: activeCharacter.status,
+    });
   };
 
   const cancelEditUser = async () => {
@@ -185,6 +228,12 @@ export default function CharacterDashboard() {
     if (!ok) return;
 
     setEditModeUser(false);
+
+    // ✅ LOG: annullo modifica
+    await writeLog("BG_EDIT_CANCEL", "Modifica background annullata", {
+      user_id: profile.id,
+      character_id: activeCharacter?.id,
+    });
   };
 
   const saveEditUser = async () => {
@@ -232,6 +281,13 @@ export default function CharacterDashboard() {
           "Errore",
           "Errore durante il salvataggio del background."
         );
+
+        // ✅ LOG: errore salvataggio
+        await writeLog("BG_EDIT_SAVE_ERROR", "Errore salvataggio modifica BG", {
+          user_id: profile.id,
+          character_id: activeCharacter.id,
+          error: error?.message || String(error),
+        });
         return;
       }
 
@@ -242,13 +298,12 @@ export default function CharacterDashboard() {
       );
       setEditModeUser(false);
 
-      await supabase.from("logs").insert({
-        type: "BG_EDITED_USER",
-        message: `Background modificato dall'utente per ${data.nome} ${data.cognome}.`,
-        meta: JSON.stringify({
-          character_id: data.id,
-          user_id: profile.id,
-        }),
+      // ✅ LOG: salvataggio riuscito
+      await writeLog("BG_EDIT_SAVE", "Background modificato dall'utente", {
+        user_id: profile.id,
+        character_id: data.id,
+        nome: `${data.nome} ${data.cognome}`,
+        status_after: data.status,
       });
 
       toast("success", "Background aggiornato (in revisione)");
@@ -259,6 +314,13 @@ export default function CharacterDashboard() {
     } catch (err) {
       console.error("Error updating character by user", err);
       await alertError("Errore", "Errore generico durante il salvataggio.");
+
+      // ✅ LOG: catch generico
+      await writeLog("BG_EDIT_SAVE_ERROR", "Errore generico salvataggio BG", {
+        user_id: profile.id,
+        character_id: activeCharacter.id,
+        error: err?.message || String(err),
+      });
     } finally {
       setSavingEditUser(false);
     }
@@ -344,6 +406,12 @@ export default function CharacterDashboard() {
     });
 
     if (!ok) return;
+
+    // ✅ LOG: stampa
+    await writeLog("BG_PRINT", "Stampa background", {
+      user_id: profile.id,
+      character_id: activeCharacter.id,
+    });
 
     const win = window.open("", "_blank", "width=800,height=900");
     if (!win) {
@@ -454,9 +522,16 @@ export default function CharacterDashboard() {
                     <button
                       key={pg.id}
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         setActiveCharacterId(pg.id);
                         setEditModeUser(false);
+
+                        // ✅ LOG: selezione personaggio
+                        await writeLog("BG_SELECT", "Selezione background", {
+                          user_id: profile.id,
+                          character_id: pg.id,
+                          status: pg.status,
+                        });
                       }}
                       className={statusCardClass(pg.status, isActive)}
                       title={`Stato: ${STATUS_LABELS[pg.status] ?? "—"}`}
@@ -492,7 +567,12 @@ export default function CharacterDashboard() {
 
               <button
                 type="button"
-                onClick={() => navigate("/background")}
+                onClick={async () => {
+                  await writeLog("BG_GOTO_NEW_FORM", "Vai al form nuovo BG", {
+                    user_id: profile.id,
+                  });
+                  navigate("/background");
+                }}
                 className="w-full mt-1 px-3 py-2.5 rounded-2xl text-xs md:text-sm font-semibold bg-[var(--violet)] text-white shadow-md hover:brightness-110 active:scale-95 transition"
               >
                 + Nuovo background
