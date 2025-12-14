@@ -183,15 +183,21 @@ export default function AdminDashboard() {
   const softPanel =
     "rounded-2xl border border-[var(--color-border)] bg-black/20";
 
-  // ✅ writer log (fallback se la colonna meta non esiste)
   const writeLog = async (type, message, meta = {}) => {
     try {
       const res = await supabase.from("logs").insert({
         type,
         message,
-        meta: safeMeta(meta),
+        meta: {
+          ...safeMeta(meta),
+          user_id: profile?.id, // ID dell'utente
+          discord_id: profile?.discord_id, // ID Discord
+          provider: "discord", // Provider (se necessario)
+          author: profile?.discord_username, // Nome dell'autore
+        },
         created_at: new Date().toISOString(),
       });
+
       if (res?.error) {
         await supabase.from("logs").insert({
           type,
@@ -973,14 +979,28 @@ export default function AdminDashboard() {
                         <p className="mt-1 text-xs md:text-sm text-[var(--color-text)]">
                           {l.message}
                         </p>
+
+                        {/* Mostra il nome dell'autore */}
+                        {l.meta?.author && (
+                          <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+                            <span>Autore: </span>
+                            <span className="font-semibold">
+                              {l.meta.author}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Mostra il Discord ID dell'autore */}
+                        {l.meta?.discord_id && (
+                          <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+                            <span>Discord ID: </span>
+                            <span className="font-semibold">
+                              {l.meta.discord_id}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ))}
-
-                    {overviewLogs.length === 0 && (
-                      <p className="text-xs text-[var(--color-text-muted)]">
-                        Nessun log disponibile.
-                      </p>
-                    )}
                   </div>
 
                   <div className="flex items-center justify-between pt-2 text-[11px] text-[var(--color-text-muted)]">
@@ -1299,9 +1319,18 @@ export default function AdminDashboard() {
                         })}
                       </span>
                     </div>
+
                     <p className="mt-2 text-xs md:text-sm text-[var(--color-text)]">
                       {l.message}
                     </p>
+
+                    {/* Aggiungi qui il nome dell'autore */}
+                    {l.meta?.author && (
+                      <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+                        <span>Autore: </span>
+                        <span className="font-semibold">{l.meta.author}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
 
