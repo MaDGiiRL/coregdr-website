@@ -1,25 +1,5 @@
 // src/pages/Home/JoinDiscordSection.jsx
-import { Canvas, useLoader } from "@react-three/fiber";
-import { Float, OrbitControls } from "@react-three/drei";
-import * as THREE from "three";
-import logo from "../../assets/img/logo.png";
-
-function Logo3D() {
-  const texture = useLoader(THREE.TextureLoader, logo);
-
-  return (
-    <Float speed={2} floatIntensity={1.5} rotationIntensity={0.5}>
-      <mesh>
-        <planeGeometry args={[2.5, 2.5]} />
-        <meshStandardMaterial
-          map={texture}
-          transparent
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    </Float>
-  );
-}
+import logo from "../../assets/img/logo.gif";
 
 export default function JoinDiscordSection() {
   return (
@@ -51,21 +31,15 @@ export default function JoinDiscordSection() {
         </div>
       </div>
 
-      {/* Parte 3D con logo */}
-      <div className="relative z-10 w-full md:w-1/2 h-56 md:h-64 lg:h-72 rounded-3xl border border-white/10 bg-black/40 overflow-hidden min-w-0">
-        <Canvas camera={{ position: [0, 0, 5], fov: 45 }} dpr={1}>
-          <ambientLight intensity={0.6} />
-          <directionalLight position={[3, 3, 5]} intensity={1.2} />
-
-          <Logo3D />
-
-          <OrbitControls
-            enablePan={false}
-            enableZoom={false}
-            autoRotate
-            autoRotateSpeed={1.2}
-          />
-        </Canvas>
+      {/* GIF (al posto del 3D) */}
+      <div className="relative z-10 w-full md:w-1/2 h-56 md:h-64 lg:h-72 rounded-3xl border border-white/10 bg-black/40 overflow-hidden min-w-0 flex items-center justify-center">
+        <img
+          src={logo}
+          alt="Logo Discord"
+          className="w-full h-full object-contain p-6 select-none"
+          draggable={false}
+          loading="lazy"
+        />
       </div>
     </section>
   );
