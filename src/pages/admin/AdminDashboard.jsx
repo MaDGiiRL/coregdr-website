@@ -1002,10 +1002,7 @@ export default function AdminDashboard() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                          {l.plugin}
-                        </span>
-                        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-muted)]">
-                          {l.type}
+                          {l.plugin} - {l.type}
                         </span>
                       </div>
 
