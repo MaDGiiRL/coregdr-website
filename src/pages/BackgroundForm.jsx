@@ -51,7 +51,7 @@ export const usePenalCode = () => {
 
       try {
         const base =
-          import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:3001";
+          import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:5000";
 
         const [resArticoli, resCategorie] = await Promise.all([
           fetch(`${base}/api/procura/articoli`, { signal: ctrl.signal }),

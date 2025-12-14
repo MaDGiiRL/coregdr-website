@@ -11,7 +11,7 @@ export function useServerStatus() {
   useEffect(() => {
     let mounted = true;
 
-    fetch("http://localhost:3001/api/server-status")
+    fetch("http://localhost:5000/api/server-status")
       .then((r) => r.json())
       .then((data) => {
         if (!mounted) return;
