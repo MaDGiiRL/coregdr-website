@@ -24,6 +24,11 @@ MOD_ROLE_IDS = os.getenv("MOD_ROLE_IDS", "").split(",")
 
 # FiveM
 FIVEM_JOIN_CODE = os.getenv("FIVEM_JOIN_CODE", "")
+DB_USER_FIVEM = os.getenv("DB_USER_FIVEM", "")
+DB_HOST_FIVEM = os.getenv("DB_HOST_FIVEM", "")
+DB_DATABASE_FIVEM = os.getenv("DB_DATABASE_FIVEM", "")
+DB_PASSWORD_FIVEM = os.getenv("DB_PASSWORD_FIVEM", "")
+DB_PORT_FIVEM = os.getenv("DB_PORT_FIVEM", "")
 
 # JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")

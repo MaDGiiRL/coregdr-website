@@ -11,7 +11,9 @@ export function useServerStatus() {
   useEffect(() => {
     let mounted = true;
 
-    fetch("/api/server-status")
+    const API_URL = import.meta.env.VITE_API_URL || '';
+
+    fetch(`${API_URL}/api/status`)
       .then((r) => r.json())
       .then((data) => {
         if (!mounted) return;

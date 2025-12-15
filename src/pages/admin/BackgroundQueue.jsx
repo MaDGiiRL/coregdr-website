@@ -1234,15 +1234,6 @@ export default function BackgroundQueue() {
                               {u.backgroundsCount}
                             </span>
                           </p>
-                          <p className="text-[11px] text-[var(--color-text-muted)]">
-                            Ultimo accesso:{" "}
-                            <span className="text-white/80">{last}</span>
-                            <span className="mx-2 opacity-50">•</span>
-                            Ore:{" "}
-                            <span className="text-white/80 font-semibold">
-                              {hrs}
-                            </span>
-                          </p>
                         </div>
 
                         <span
@@ -1379,26 +1370,6 @@ export default function BackgroundQueue() {
                             </span>
                           </p>
 
-                          <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                            Ultimo accesso:{" "}
-                            <span className="text-white/80">
-                              {selectedUserStat?.lastServerJoinAt
-                                ? new Date(
-                                    selectedUserStat.lastServerJoinAt
-                                  ).toLocaleString("it-IT", {
-                                    dateStyle: "short",
-                                    timeStyle: "short",
-                                  })
-                                : "—"}
-                            </span>
-                            <span className="mx-2 opacity-50">•</span>
-                            Ore:{" "}
-                            <span className="text-white/80 font-semibold">
-                              {Number(
-                                selectedUserStat?.hoursPlayed ?? 0
-                              ).toFixed(1)}
-                            </span>
-                          </p>
                         </div>
 
                         <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)]">

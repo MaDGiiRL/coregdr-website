@@ -9,7 +9,9 @@ export function useDiscordRoles(discordIds = [], deps = []) {
 
     setLoading(true);
 
-    fetch(`/api/checkroles?ids=${discordIds.join(",")}`)
+    const API_URL = import.meta.env.VITE_API_URL || '';
+
+    fetch(`${API_URL}/api/checkroles?ids=${discordIds.join(",")}`)
       .then(res => res.json())
       .then(data => {
         setRoles(data);

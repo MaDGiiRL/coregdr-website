@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDiscordRoles } from "../../hooks/useDiscordRoles";
+import { useServerAccess } from "../../hooks/useServerAccess";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   LayoutDashboard,
@@ -239,6 +240,14 @@ export default function AdminDashboard() {
     if (!isAdmin && activeTab !== "backgrounds") setActiveTab("backgrounds");
   }, [isAdmin, activeTab]);
 
+  const accessEnabled = isAdmin; // oppure isAdmin && activeTab === "users"
+
+  const {
+    accessMap,
+    loading: accessLoading,
+    error: accessError,
+  } = useServerAccess({ enabled: accessEnabled });
+
   const fetchData = async () => {
     if (!profile) return;
 
@@ -289,6 +298,7 @@ export default function AdminDashboard() {
         .select(
           `
           id,
+          discord_id,
           discord_username,
           created_at,
           is_moderator,
@@ -318,28 +328,33 @@ export default function AdminDashboard() {
             latestJobByUser.set(ch.user_id, (ch.job ?? "").trim());
         });
 
-        // ✅ accessi/ore (admin-only)
-        const { data: statsData, error: statsErr } = await supabase
-          .from("profile_admin_stats")
-          .select("profile_id, last_server_join_at, hours_played");
-
-        const statsMap = new Map();
-        if (!statsErr) {
-          (statsData || []).forEach((r) => {
-            statsMap.set(r.profile_id, {
-              lastServerJoinAt: r.last_server_join_at ?? null,
-              hoursPlayed: Number(r.hours_played ?? 0),
-            });
-          });
-        }
-
         setUsers(
           (usersData || []).map((u) => {
-            const st = statsMap.get(u.id);
+            const stList = accessMap.get(u.discord_id) ?? [];
+            
+            let lastServerJoinAt = null;
+            let hoursPlayed = 0;
+
+            stList.forEach((userMap) => {
+              for (const [, data] of userMap) {
+                // Calcolo del più recente lastServerJoinAt
+                if (data.lastServerJoinAt) {
+                  const date = new Date(data.lastServerJoinAt);
+                  if (!lastServerJoinAt || date > lastServerJoinAt) {
+                    lastServerJoinAt = date;
+                  }
+                }
+                // Somma degli hoursPlayed
+                hoursPlayed += Number(data.hoursPlayed ?? 0);
+              }
+            });
+
             const bgStatus = latestBgByUser.get(u.id) ?? "none";
             const job = latestJobByUser.get(u.id) ?? "";
+
             return {
               id: u.id,
+              discord_id: u.discord_id,
               discordName: u.discord_username ?? "Senza nome",
               joinedAt: u.created_at,
               bgStatus,
@@ -347,8 +362,8 @@ export default function AdminDashboard() {
               jobNorm: normalizeJob(job),
               isMod: !!u.is_moderator,
               isAdmin: !!u.is_admin,
-              lastServerJoinAt: st?.lastServerJoinAt ?? null,
-              hoursPlayed: Number(st?.hoursPlayed ?? 0),
+              lastServerJoinAt,
+              hoursPlayed,
             };
           })
         );
@@ -403,7 +418,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, isAdmin]);
+  }, [profile, isAdmin, accessMap]);
 
   // ✅ poll leggero logs quando sei in overview/logs
   useEffect(() => {
@@ -1053,10 +1068,6 @@ export default function AdminDashboard() {
                     <UsersIcon className="w-5 h-5" />
                     Utenti registrati
                   </h2>
-                  <p className="text-xs md:text-sm text-[var(--color-text-muted)]">
-                    Job = gruppo (preso dai background). Ultimo accesso + ore
-                    giocate.
-                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -1164,15 +1175,15 @@ export default function AdminDashboard() {
                           </p>
 
                           <p className="text-[11px] text-[var(--color-text-muted)]">
+                            <span className="font-mono opacity-80">
+                              {u.discord_id}
+                            </span>
+                            <span className="mx-2 opacity-50">•</span>
                             Iscritto il{" "}
                             {new Date(u.joinedAt).toLocaleString("it-IT", {
                               dateStyle: "short",
                               timeStyle: "short",
                             })}
-                            <span className="mx-2 opacity-50">•</span>
-                            <span className="font-mono opacity-80">
-                              {u.id.slice(0, 8)}…
-                            </span>
                           </p>
 
                           <div className="mt-2 flex flex-wrap gap-2">

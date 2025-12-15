@@ -1,33 +1,48 @@
 // src/hooks/useGameTime.js
 import { useEffect, useState } from "react";
 
-// CONFIGURAZIONE
-const GAME_SPEED = 60; // 1 minuto reale = 1 ora in-game
+const ORIGIN_HOUR = 15;      // 15:00 reali = 00:00 game
+const TICK_MS = 30_000;     // 1 minuto game ogni 30 secondi
+
+function getInitialGameTime() {
+    const now = new Date();
+
+    const realMinutes = now.getHours() * 60 + now.getMinutes();
+    let deltaMinutes = realMinutes - ORIGIN_HOUR * 60;
+
+    if (deltaMinutes < 0) {
+        deltaMinutes += 24 * 60;
+    }
+
+    // tempo dimezzato
+    const gameMinutes = (deltaMinutes * 2) % (24 * 60);
+
+    return {
+        h: Math.floor(gameMinutes / 60),
+        m: gameMinutes % 60,
+    };
+}
 
 export function useGameTime() {
-    const [time, setTime] = useState({ h: 12, m: 0 });
+    const [time, setTime] = useState(getInitialGameTime);
 
     useEffect(() => {
         const interval = setInterval(() => {
             setTime((prev) => {
-                let minutes = prev.m + GAME_SPEED;
-                let hours = prev.h;
+                let m = prev.m + 1;
+                let h = prev.h;
 
-                if (minutes >= 60) {
-                    hours = (hours + Math.floor(minutes / 60)) % 24;
-                    minutes = minutes % 60;
+                if (m >= 60) {
+                    m = 0;
+                    h = (h + 1) % 24;
                 }
 
-                return { h: hours, m: minutes };
+                return { h, m };
             });
-        }, 1000);
+        }, TICK_MS);
 
         return () => clearInterval(interval);
     }, []);
 
-    const formatted = `${String(time.h).padStart(2, "0")}:${String(
-        time.m
-    ).padStart(2, "0")}`;
-
-    return formatted;
+    return `${String(time.h).padStart(2, "0")}:${String(time.m).padStart(2, "0")}`;
 }

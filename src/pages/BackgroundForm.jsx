@@ -51,9 +51,11 @@ export const usePenalCode = () => {
 
       try {
 
+        const API_URL = import.meta.env.VITE_API_URL || '';
+        
         const [resArticoli, resCategorie] = await Promise.all([
-          fetch(`/api/procura/articoli`, { signal: ctrl.signal }),
-          fetch(`/api/procura/articoli/categorie`, {
+          fetch(`${API_URL}/api/procura/articoli`, { signal: ctrl.signal }),
+          fetch(`${API_URL}/api/procura/articoli/categorie`, {
             signal: ctrl.signal,
           }),
         ]);
