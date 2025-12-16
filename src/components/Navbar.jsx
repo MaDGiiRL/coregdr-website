@@ -24,7 +24,7 @@ import { signInWithDiscord, signOut } from "../lib/auth";
 import { alertError, confirmAction, toast } from "../lib/alerts";
 import { supabase } from "../lib/supabaseClient";
 
-// CSS utility classes for links
+/* ------------------ LINK STYLES ------------------ */
 const linkBase =
   "px-3 py-2 text-sm md:text-base rounded-full transition border border-transparent inline-flex items-center gap-2";
 const linkActive =
@@ -32,36 +32,33 @@ const linkActive =
 const linkInactive =
   "text-[var(--color-text-muted)] hover:text-[var(--color-accent-cool)] hover:bg-white/5";
 
-// Navigation items with links, labels, and icons
+/* ------------------ NAV ITEMS ------------------ */
 const navItems = [
   { to: "/", label: "Home", icon: HomeIcon, end: true },
   { to: "/how-to-connect", label: "Come connettersi", icon: Plug },
   { to: "/regolamento", label: "Regolamento", icon: ScrollText },
+
+  // ✅ PAGINA TRAMA (3 ATTI)
+  { to: "/trama", label: "Trama", icon: FileText },
+
   { to: "/staff", label: "Staff", icon: Users },
 ];
 
-// Function to build the Discord avatar URL
+/* ------------------ AVATAR BUILDER ------------------ */
 function buildDiscordAvatarUrl(meta) {
   if (!meta) return null;
-
-  if (typeof meta.avatar_url === "string" && meta.avatar_url.length > 0) {
-    return meta.avatar_url;
-  }
+  if (meta.avatar_url) return meta.avatar_url;
 
   const discordId = meta.provider_id || meta.sub || meta.id;
   const avatarHash = meta.avatar;
-
   if (discordId && avatarHash) {
-    const isAnimated =
-      typeof avatarHash === "string" && avatarHash.startsWith("a_");
-    const ext = isAnimated ? "gif" : "png";
+    const ext = avatarHash.startsWith("a_") ? "gif" : "png";
     return `https://cdn.discordapp.com/avatars/${discordId}/${avatarHash}.${ext}?size=128`;
   }
-
   return null;
 }
 
-// ---------------- LOG HELPER ----------------
+/* ------------------ LOG HELPER ------------------ */
 const safeMeta = (obj) => {
   try {
     return obj && typeof obj === "object" ? obj : {};
@@ -82,7 +79,7 @@ const writeLog = async (type, message, meta = {}) => {
     console.debug("[NAVBAR LOG]", e?.message || e);
   }
 };
-// -------------------------------------------
+/* ------------------------------------------------ */
 
 export default function Navbar() {
   const {
@@ -115,179 +112,61 @@ export default function Navbar() {
   const meta = user?.user_metadata || {};
   const displayName =
     profile?.discord_username ||
-    meta.custom_claims?.global_name ||
     meta.global_name ||
     meta.full_name ||
     meta.name ||
-    meta.user_name ||
-    user?.email ||
     "Utente";
 
-  const avatarInitial =
-    displayName && typeof displayName === "string"
-      ? displayName.charAt(0).toUpperCase()
-      : "?";
-
+  const avatarInitial = displayName.charAt(0).toUpperCase();
   const discordAvatarUrl = useMemo(() => buildDiscordAvatarUrl(meta), [meta]);
   const [avatarError, setAvatarError] = useState(false);
 
+  useEffect(() => setAvatarError(false), [discordAvatarUrl]);
+
+  /* ------------------ ESC + CLICK OUT ------------------ */
   useEffect(() => {
-    setAvatarError(false);
-  }, [discordAvatarUrl]);
+    const onKey = (e) => e.key === "Escape" && setMobileOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
+  /* ------------------ BODY LOCK ------------------ */
   useEffect(() => {
-    const onDown = (e) => {
-      if (e.key === "Escape") {
-        setMobileOpen(false);
-        setUserOpen(false);
-        setNotifOpen(false);
-      }
-    };
-
-    const onClick = (e) => {
-      if (
-        mobileOpen &&
-        mobileRef.current &&
-        !mobileRef.current.contains(e.target)
-      ) {
-        setMobileOpen(false);
-      }
-      if (userOpen && userRef.current && !userRef.current.contains(e.target)) {
-        setUserOpen(false);
-      }
-      if (
-        notifOpen &&
-        notifRef.current &&
-        !notifRef.current.contains(e.target)
-      ) {
-        setNotifOpen(false);
-      }
-    };
-
-    document.addEventListener("keydown", onDown);
-    document.addEventListener("mousedown", onClick);
-    return () => {
-      document.removeEventListener("keydown", onDown);
-      document.removeEventListener("mousedown", onClick);
-    };
-  }, [mobileOpen, userOpen, notifOpen]);
-
-  useEffect(() => {
-    if (!mobileOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    document.body.style.overflow = mobileOpen ? "hidden" : "";
   }, [mobileOpen]);
-
-  const handleLogout = async () => {
-    const ok = await confirmAction({
-      title: "Vuoi uscire?",
-      text: "Verrai disconnesso dal tuo account.",
-      confirmText: "Sì, logout",
-      cancelText: "Annulla",
-      icon: "question",
-    });
-
-    if (!ok) return;
-
-    try {
-      await writeLog("AUTH_LOGOUT", "Logout utente", {
-        user_id: profile?.id,
-        discord_id: profile?.discord_id,
-      });
-
-      await signOut();
-      setUserOpen(false);
-      setNotifOpen(false);
-      setMobileOpen(false);
-
-      toast("success", "Logout effettuato");
-      navigate("/");
-    } catch (e) {
-      console.error("Errore durante logout:", e);
-      await alertError(
-        "Errore logout",
-        "Errore durante il logout. Riprova tra qualche secondo."
-      );
-    }
-  };
 
   const closeAllAndGo = async (to) => {
     setMobileOpen(false);
     setUserOpen(false);
     setNotifOpen(false);
-
-    await writeLog("NAVIGATE", `Navigazione verso ${to}`, {
-      user_id: profile?.id,
-      discord_id: profile?.discord_id,
-      to,
-    });
-
+    await writeLog("NAVIGATE", `Go to ${to}`);
     navigate(to);
   };
 
-  const overlayAnim = {
-    initial: { opacity: 0 },
-    animate: { opacity: 1, transition: { duration: 0.15 } },
-    exit: { opacity: 0, transition: { duration: 0.12 } },
-  };
-
-  const drawerAnim = {
-    initial: { x: "100%" },
-    animate: { x: 0, transition: { duration: 0.22, ease: "easeOut" } },
-    exit: { x: "100%", transition: { duration: 0.18, ease: "easeIn" } },
-  };
-
-  const dropdownAnim = {
-    initial: { opacity: 0, y: reduce ? 0 : 8, scale: reduce ? 1 : 0.98 },
-    animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.16 } },
-    exit: {
-      opacity: 0,
-      y: reduce ? 0 : 6,
-      scale: reduce ? 1 : 0.98,
-      transition: { duration: 0.12 },
-    },
-  };
-
+  /* ------------------ Z INDEX ------------------ */
   const Z_NAV = 100000;
   const Z_OVER = 100001;
   const Z_DRAWER = 100002;
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 w-full border-b border-[var(--color-border)]/40 bg-[#13142b]/70 backdrop-blur"
+      className="fixed top-0 inset-x-0 border-b border-[var(--color-border)]/40 bg-[#13142b]/70 backdrop-blur"
       style={{ zIndex: Z_NAV }}
     >
       <nav className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         {/* LOGO */}
-        <Link
-          to="/"
-          onClick={async () => {
-            setMobileOpen(false);
-            setUserOpen(false);
-            setNotifOpen(false);
-
-            await writeLog("NAV_LINK", "Click logo (Home)", { to: "/" });
-          }}
-          className="flex items-center gap-2"
-        >
-          <img
-            src={logo}
-            alt="Core GDR logo"
-            className="h-9 w-9 rounded-2xl object-cover shadow-md"
-          />
-          <div className="leading-tight">
-            <p className="font-semibold text-sm md:text-base">Core GDR</p>
-            <p className="text-[10px] md:text-xs text-[var(--color-text-muted)]">
+        <Link to="/" className="flex items-center gap-2">
+          <img src={logo} alt="Core GDR" className="h-9 w-9 rounded-2xl" />
+          <div>
+            <p className="font-semibold">Core GDR</p>
+            <p className="text-[10px] text-[var(--color-text-muted)]">
               FiveM Server
             </p>
           </div>
         </Link>
 
-        {/* DESKTOP LINKS */}
-        <div className="hidden md:flex items-center gap-2 md:gap-3">
+        {/* DESKTOP MENU */}
+        <div className="hidden md:flex items-center gap-2">
           {navItems.map((it) => {
             const Icon = it.icon;
             return (
@@ -295,11 +174,6 @@ export default function Navbar() {
                 key={it.to}
                 to={it.to}
                 end={it.end}
-                onClick={() =>
-                  writeLog("NAV_LINK", `Click menu: ${it.label}`, {
-                    to: it.to,
-                  })
-                }
                 className={({ isActive }) =>
                   `${linkBase} ${isActive ? linkActive : linkInactive}`
                 }
@@ -311,471 +185,118 @@ export default function Navbar() {
           })}
         </div>
 
-        {/* RIGHT AREA */}
+        {/* RIGHT */}
         <div className="flex items-center gap-2">
-          {/* MOBILE hamburger */}
           <button
-            type="button"
-            onClick={async () => {
-              setMobileOpen(true);
-              setUserOpen(false);
-              setNotifOpen(false);
-
-              await writeLog("UI", "Apertura mobile drawer");
-            }}
-            className="md:hidden inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 hover:bg-[var(--color-surface)] transition"
-            aria-label="Apri menu"
+            onClick={() => setMobileOpen(true)}
+            className="md:hidden h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-white/5"
           >
-            <Menu className="w-5 h-5 text-[var(--color-text)]" />
+            <Menu className="w-5 h-5" />
           </button>
 
-          {/* 🔔 NOTIFICHE (desktop) */}
-          {isLoggedIn && (
+          {!isLoggedIn ? (
             <button
-              type="button"
-              onClick={async () => {
-                setNotifOpen((p) => !p);
-                setUserOpen(false);
-
-                await writeLog("NOTIF_OPEN", "Toggle pannello notifiche", {
-                  unread: unreadCount,
-                });
-              }}
-              className="relative hidden md:inline-flex items-center justify-center h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 hover:bg-[var(--color-surface)] transition"
-              aria-label="Notifiche"
+              onClick={signInWithDiscord}
+              className="hidden md:inline-flex px-4 py-2 rounded-full bg-[var(--blue)] text-[#050816] text-sm font-semibold"
             >
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">
-                  {unreadCount}
-                </span>
-              )}
+              <LogIn className="w-4 h-4 mr-2" />
+              Login Discord
             </button>
-          )}
-
-          {/* AUTH (desktop) */}
-          <div className="hidden md:block">
-            {loading && !session && !profile ? (
-              <div className="h-9 w-28 rounded-full bg-white/5 animate-pulse" />
-            ) : !isLoggedIn ? (
+          ) : (
+            <div className="relative">
               <button
-                type="button"
-                onClick={async () => {
-                  await writeLog("AUTH_LOGIN", "Tentativo login Discord");
-                  signInWithDiscord();
-                }}
-                className="px-4 py-2 rounded-full text-xs md:text-sm font-medium bg-[var(--blue)] text-[#050816] shadow-lg hover:brightness-110 transition inline-flex items-center gap-2"
+                onClick={() => setUserOpen((p) => !p)}
+                className="flex items-center gap-2 px-3 py-2 rounded-full border border-[var(--color-border)] bg-white/5"
               >
-                <LogIn className="w-4 h-4" />
-                Login Discord
-              </button>
-            ) : (
-              <div className="relative" ref={userRef}>
-                <button
-                  type="button"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    setUserOpen((p) => !p);
-                    setNotifOpen(false);
-
-                    await writeLog("UI", "Toggle dropdown utente");
-                  }}
-                  className="flex items-center gap-2 px-2 py-1.5 md:px-3 md:py-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/80 hover:bg-[var(--color-surface)] transition text-xs md:text-sm"
-                >
-                  <div className="h-8 w-8 rounded-full overflow-hidden bg-[var(--violet)] shadow-md border border-white/10 grid place-items-center">
-                    {discordAvatarUrl && !avatarError ? (
-                      <img
-                        src={discordAvatarUrl}
-                        alt="Avatar Discord"
-                        className="h-full w-full object-cover"
-                        referrerPolicy="no-referrer"
-                        onError={() => setAvatarError(true)}
-                      />
-                    ) : (
-                      <span className="text-xs font-bold text-white">
-                        {avatarInitial}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="hidden lg:flex flex-col items-start leading-tight max-w-[160px]">
-                    <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                      Ciao,
+                <div className="h-8 w-8 rounded-full overflow-hidden bg-[var(--violet)] grid place-items-center">
+                  {discordAvatarUrl && !avatarError ? (
+                    <img
+                      src={discordAvatarUrl}
+                      onError={() => setAvatarError(true)}
+                      alt=""
+                    />
+                  ) : (
+                    <span className="text-white text-sm font-bold">
+                      {avatarInitial}
                     </span>
-                    <span className="text-[11px] md:text-xs truncate">
-                      {displayName}
-                    </span>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)]" />
-                </button>
-
-                <AnimatePresence>
-                  {userOpen && (
-                    <motion.div
-                      {...dropdownAnim}
-                      className="absolute right-0 mt-2 w-60 rounded-2xl border border-[var(--color-border)] bg-[#181a33]/98 shadow-[0_18px_45px_rgba(0,0,0,0.7)] p-2 text-xs md:text-sm overflow-hidden"
-                      style={{ zIndex: Z_DRAWER }}
-                    >
-                      <div className="px-2 py-2 border-b border-[var(--color-border)]/60 mb-2">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                          Account
-                        </p>
-                        <p className="text-[12px] font-medium truncate">
-                          {displayName}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          onClick={() => closeAllAndGo("/dashboard")}
-                          className="w-full text-left px-2 py-2 rounded-xl hover:bg-white/5 inline-flex items-center gap-2"
-                        >
-                          <LayoutDashboard className="w-4 h-4" />
-                          Dashboard
-                        </button>
-
-                        {/* ✅ SOLO MOD */}
-                        {isMod && (
-                          <button
-                            type="button"
-                            onClick={() => closeAllAndGo("/admin/backgrounds")}
-                            className="w-full text-left px-2 py-2 rounded-xl hover:bg-white/5 text-[var(--color-accent-cool)] inline-flex items-center gap-2"
-                          >
-                            <FileText className="w-4 h-4" />
-                            Moderazione BG
-                          </button>
-                        )}
-
-                        {/* ✅ SOLO ADMIN */}
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => closeAllAndGo("/admin")}
-                            className="w-full text-left px-2 py-2 rounded-xl hover:bg-white/5 text-[var(--color-accent-cool)] inline-flex items-center gap-2"
-                          >
-                            <Shield className="w-4 h-4" />
-                            Admin dashboard
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="mt-2 pt-2 border-t border-[var(--color-border)]/60">
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className="w-full text-left px-2 py-2 rounded-xl hover:bg-white/5 text-[var(--color-text-muted)] inline-flex items-center gap-2"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          Logout
-                        </button>
-                      </div>
-                    </motion.div>
                   )}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
+                </div>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              <AnimatePresence>
+                {userOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="absolute right-0 mt-2 w-56 rounded-2xl border border-[var(--color-border)] bg-[#181a33] p-2"
+                    style={{ zIndex: Z_DRAWER }}
+                  >
+                    <button
+                      onClick={() => closeAllAndGo("/dashboard")}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-white/5 flex items-center gap-2"
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      Dashboard
+                    </button>
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => closeAllAndGo("/admin")}
+                        className="w-full px-3 py-2 rounded-xl hover:bg-white/5 flex items-center gap-2"
+                      >
+                        <Shield className="w-4 h-4" />
+                        Admin
+                      </button>
+                    )}
+
+                    <button
+                      onClick={signOut}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-white/5 flex items-center gap-2 text-red-300"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Logout
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       </nav>
-
-      {/* 🔔 MODALE NOTIFICHE */}
-      <AnimatePresence>
-        {notifOpen && (
-          <>
-            <motion.div
-              {...overlayAnim}
-              className="fixed inset-0 bg-black/70"
-              style={{ zIndex: Z_OVER }}
-              onClick={() => setNotifOpen(false)}
-            />
-            <motion.div
-              ref={notifRef}
-              initial={{ opacity: 0, y: 10, scale: 0.98 }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                transition: { duration: 0.16 },
-              }}
-              exit={{
-                opacity: 0,
-                y: 8,
-                scale: 0.98,
-                transition: { duration: 0.12 },
-              }}
-              className="fixed right-4 top-16 md:top-20 w-[92%] max-w-[420px] rounded-2xl border border-[var(--color-border)] bg-[#181a33]/98 shadow-[0_18px_60px_rgba(0,0,0,0.75)] overflow-hidden"
-              style={{ zIndex: Z_DRAWER }}
-            >
-              <div className="p-3 border-b border-[var(--color-border)]/60 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                    Notifiche
-                  </p>
-                  <p className="text-sm font-medium">
-                    {unreadCount > 0
-                      ? `${unreadCount} non lette`
-                      : "Tutte lette"}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await writeLog(
-                        "NOTIF_READ_ALL",
-                        "Tutte le notifiche segnate come lette"
-                      );
-                      markAllNotificationsRead();
-                    }}
-                    className="px-3 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5 text-xs"
-                  >
-                    Segna tutte lette
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNotifOpen(false)}
-                    className="px-3 py-1 rounded-full border border-[var(--color-border)] hover:bg-white/5 text-xs"
-                  >
-                    Chiudi
-                  </button>
-                </div>
-              </div>
-
-              <div className="max-h-[420px] overflow-y-auto p-2 space-y-2">
-                {notifications?.length ? (
-                  notifications.map((n) => (
-                    <button
-                      key={n.id}
-                      type="button"
-                      onClick={async () => {
-                        await writeLog("NOTIF_READ", "Notifica letta", {
-                          notification_id: n.id,
-                        });
-                        markNotificationRead(n.id);
-                      }}
-                      className={`w-full text-left rounded-xl border px-3 py-3 transition ${
-                        n.read_at
-                          ? "border-[var(--color-border)] bg-black/20"
-                          : "border-[var(--blue)] bg-[rgba(53,210,255,0.10)]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <p className="text-xs font-semibold">{n.title}</p>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">
-                          {new Date(n.created_at).toLocaleString("it-IT", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[var(--color-text-muted)]">
-                        {n.message}
-                      </p>
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-xs text-[var(--color-text-muted)] p-3">
-                    Nessuna notifica.
-                  </p>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
       {/* MOBILE DRAWER */}
       <AnimatePresence>
         {mobileOpen && (
           <>
             <motion.div
-              {...overlayAnim}
               className="fixed inset-0 bg-black/70"
               style={{ zIndex: Z_OVER }}
               onClick={() => setMobileOpen(false)}
             />
-
             <motion.aside
-              {...drawerAnim}
-              ref={mobileRef}
-              className={[
-                "fixed top-0 right-0 h-[100dvh] w-[86%] max-w-[360px]",
-                "border-l border-[var(--color-border)]",
-                "bg-[#0b0d1b] text-[var(--color-text)]",
-                "shadow-[0_22px_80px_rgba(0,0,0,0.85)]",
-              ].join(" ")}
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              className="fixed top-0 right-0 h-full w-[86%] max-w-[360px] bg-[#0b0d1b] border-l border-[var(--color-border)] p-4"
               style={{ zIndex: Z_DRAWER }}
             >
-              <div className="p-4 flex items-center justify-between border-b border-[var(--color-border)]/60">
-                <div className="flex items-center gap-2">
-                  <img src={logo} alt="logo" className="h-9 w-9 rounded-2xl" />
-                  <div className="leading-tight">
-                    <p className="font-semibold">Core GDR</p>
-                    <p className="text-[11px] text-[var(--color-text-muted)]">
-                      Menu
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setMobileOpen(false)}
-                  className="h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-white/5 hover:bg-white/10 transition inline-flex items-center justify-center"
-                  aria-label="Chiudi menu"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-4 space-y-2">
+              <div className="space-y-2">
                 {navItems.map((it) => {
                   const Icon = it.icon;
                   return (
                     <NavLink
                       key={it.to}
                       to={it.to}
-                      end={it.end}
-                      onClick={async () => {
-                        setMobileOpen(false);
-                        await writeLog(
-                          "NAV_LINK",
-                          `Click menu mobile: ${it.label}`,
-                          { to: it.to }
-                        );
-                      }}
-                      className={({ isActive }) =>
-                        `w-full px-3 py-3 rounded-2xl border transition flex items-center gap-2 ${
-                          isActive
-                            ? "bg-white/10 border-[var(--color-accent-cool)] text-[var(--color-accent-cool)]"
-                            : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-                        }`
-                      }
+                      onClick={() => setMobileOpen(false)}
+                      className="flex items-center gap-2 px-4 py-3 rounded-2xl border border-[var(--color-border)]"
                     >
                       <Icon className="w-4 h-4" />
                       {it.label}
                     </NavLink>
                   );
                 })}
-              </div>
-
-              <div className="p-4 border-t border-[var(--color-border)]/60 space-y-3">
-                {loading && !session && !profile ? (
-                  <div className="h-10 w-full rounded-2xl bg-white/5 animate-pulse" />
-                ) : !isLoggedIn ? (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setMobileOpen(false);
-                      await writeLog(
-                        "AUTH_LOGIN",
-                        "Tentativo login Discord (mobile)"
-                      );
-                      signInWithDiscord();
-                    }}
-                    className="w-full px-4 py-3 rounded-2xl bg-[var(--blue)] text-[#050816] font-semibold shadow-md hover:brightness-110 transition inline-flex items-center justify-center gap-2"
-                  >
-                    <LogIn className="w-4 h-4" />
-                    Login Discord
-                  </button>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setMobileOpen(false);
-                          setNotifOpen(true);
-                          setUserOpen(false);
-
-                          await writeLog(
-                            "NOTIF_OPEN",
-                            "Apertura notifiche da mobile drawer",
-                            { unread: unreadCount }
-                          );
-                        }}
-                        className="relative inline-flex items-center justify-center h-11 w-11 rounded-2xl border border-[var(--color-border)] bg-white/5 hover:bg-white/10 transition"
-                        aria-label="Notifiche"
-                      >
-                        <Bell className="w-5 h-5" />
-                        {unreadCount > 0 && (
-                          <span className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">
-                            {unreadCount}
-                          </span>
-                        )}
-                      </button>
-
-                      <div className="flex-1 rounded-2xl border border-[var(--color-border)] bg-white/5 p-3 flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full overflow-hidden bg-[var(--violet)] shadow-md border border-white/10 grid place-items-center">
-                          {discordAvatarUrl && !avatarError ? (
-                            <img
-                              src={discordAvatarUrl}
-                              alt="Avatar Discord"
-                              className="h-full w-full object-cover"
-                              referrerPolicy="no-referrer"
-                              onError={() => setAvatarError(true)}
-                            />
-                          ) : (
-                            <span className="text-sm font-bold text-white">
-                              {avatarInitial}
-                            </span>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                            Account
-                          </p>
-                          <p className="text-sm font-medium truncate">
-                            {displayName}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => closeAllAndGo("/dashboard")}
-                      className="w-full px-4 py-3 rounded-2xl border border-[var(--color-border)] hover:bg-white/5 transition inline-flex items-center gap-2"
-                    >
-                      <LayoutDashboard className="w-4 h-4" />
-                      Dashboard
-                    </button>
-
-                    {/* ✅ SOLO MOD */}
-                    {isMod && (
-                      <button
-                        type="button"
-                        onClick={() => closeAllAndGo("/admin/backgrounds")}
-                        className="w-full px-4 py-3 rounded-2xl border border-[var(--color-border)] hover:bg-white/5 transition inline-flex items-center gap-2 text-[var(--color-accent-cool)]"
-                      >
-                        <FileText className="w-4 h-4" />
-                        Moderazione BG
-                      </button>
-                    )}
-
-                    {/* ✅ SOLO ADMIN */}
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => closeAllAndGo("/admin")}
-                        className="w-full px-4 py-3 rounded-2xl border border-[var(--color-border)] hover:bg-white/5 transition inline-flex items-center gap-2 text-[var(--color-accent-cool)]"
-                      >
-                        <Shield className="w-4 h-4" />
-                        Admin dashboard
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="w-full px-4 py-3 rounded-2xl border border-[var(--color-border)] hover:bg-white/5 transition inline-flex items-center gap-2 text-[var(--color-text-muted)]"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Logout
-                    </button>
-                  </>
-                )}
               </div>
             </motion.aside>
           </>

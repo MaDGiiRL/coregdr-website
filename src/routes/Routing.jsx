@@ -8,6 +8,7 @@ import Rules from "../pages/Rules";
 import CharacterDashboard from "../pages/CharacterDashboard";
 import BackgroundForm from "../pages/BackgroundForm";
 import Staff from "../pages/Staff";
+import TramaTV from "../pages/TramaTV";
 
 import BackgroundQueue from "../pages/admin/BackgroundQueue";
 import AdminDashboard from "../pages/admin/AdminDashboard";
@@ -23,7 +24,7 @@ export default function Routing() {
         <Route path="/how-to-connect" element={<HowToConnect />} />
         <Route path="/regolamento" element={<Rules />} />
         <Route path="/staff" element={<Staff />} />
-
+        <Route path="/trama" element={<TramaTV />} />
         {/* AUTH (logged-in) */}
         <Route element={<ProtectedRoute requireAuth redirectTo="/" />}>
           <Route path="/dashboard" element={<CharacterDashboard />} />
@@ -31,7 +32,9 @@ export default function Routing() {
         </Route>
 
         {/* ADMIN ONLY */}
-        <Route element={<ProtectedRoute requireAuth requireAdmin redirectTo="/" />}>
+        <Route
+          element={<ProtectedRoute requireAuth requireAdmin redirectTo="/" />}
+        >
           <Route path="/admin" element={<AdminDashboard />} />
         </Route>
 
