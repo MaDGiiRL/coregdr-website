@@ -24,6 +24,7 @@ export default function FpsOverlay({
     document.body.appendChild(el);
 
     let raf = 0;
+
     const loop = () => {
       stats.begin();
       stats.end();
