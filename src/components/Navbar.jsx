@@ -35,7 +35,7 @@ const linkInactive =
 /* ------------------ NAV ITEMS ------------------ */
 const navItems = [
   { to: "/", label: "Home", icon: HomeIcon, end: true },
-  { to: "/how-to-connect", label: "Come connettersi", icon: Plug },
+  { to: "/how-to-connect", label: "Connect", icon: Plug },
   { to: "/regolamento", label: "Regolamento", icon: ScrollText },
 
   // ✅ PAGINA TRAMA (3 ATTI)

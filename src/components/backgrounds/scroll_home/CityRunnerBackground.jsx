@@ -3,6 +3,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 
+import FpsOverlay from "../../FpsOverlay"; // ✅ aggiusta il path se diverso
 import { createGtaTexturePack } from "./gtaTextures";
 
 const PALETTE = {
@@ -27,7 +28,7 @@ function lerp(a, b, t) {
 
 function pickQuality() {
   const cores = navigator.hardwareConcurrency || 4;
-  const mem = navigator.deviceMemory || 4; // può essere undefined su alcuni browser
+  const mem = navigator.deviceMemory || 4;
   const isLow = cores <= 4 || mem <= 4;
   const isMid = cores <= 8 || mem <= 8;
   if (isLow) return "low";
@@ -43,7 +44,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     [quality]
   );
 
-  // --------- QUALITY SCALING ---------
   const Q = useMemo(() => {
     if (quality === "low") return { neonMul: 0.45, tubeMul: 0.5, bMul: 0.55 };
     if (quality === "mid") return { neonMul: 0.7, tubeMul: 0.75, bMul: 0.8 };
@@ -56,14 +56,12 @@ function CityRunnerScene({ scrollRef, quality }) {
   const ROAD_LOOP = 220;
   const zStart = 18;
 
-  // --------- SHARED GEOMETRIES ---------
   const dashGeo = useMemo(() => new THREE.PlaneGeometry(0.22, 2.2), []);
   const sideGeo = useMemo(() => new THREE.PlaneGeometry(0.16, 5.0), []);
   const neonGeo = useMemo(() => new THREE.BoxGeometry(0.28, 1, 0.05), []);
   const tubeGeo = useMemo(() => new THREE.BoxGeometry(0.18, 1.9, 0.06), []);
   const buildingGeo = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
 
-  // --------- SHARED MATERIALS ---------
   const dashMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -88,7 +86,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     []
   );
 
-  // Neons: 3 instanced (1 per colore) = ancora pochissime draw calls
   const neonMatBlue = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -136,7 +133,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     [neonStripeTex]
   );
 
-  // Buildings: 4 instanced (cool L/R, dark L/R)
   const bDarkMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -176,7 +172,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     [buildingTex]
   );
 
-  // --------- INSTANCED REFS ---------
   const dashIM = useRef();
   const sideIM = useRef();
   const neonBlueIM = useRef();
@@ -189,7 +184,6 @@ function CityRunnerScene({ scrollRef, quality }) {
   const bCoolL = useRef();
   const bCoolR = useRef();
 
-  // --------- DATA ARRAYS ---------
   const dashes = useMemo(() => {
     const gap = 4.2;
     const count = Math.floor(ROAD_LOOP / gap);
@@ -272,7 +266,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     return { dark, cool };
   }, [buildingsAll]);
 
-  // Z arrays mutabili (evita leggere/scrivere mesh ad ogni frame)
   const dashZ = useRef(dashes.map((d) => d.z));
   const sideZ = useRef(sideLines.map((s) => s.z));
   const neonZ = useRef(neons.map((n) => n.z));
@@ -281,7 +274,6 @@ function CityRunnerScene({ scrollRef, quality }) {
 
   const tmp = useMemo(() => new THREE.Object3D(), []);
 
-  // road texture wrapping
   useEffect(() => {
     roadTex.wrapS = THREE.RepeatWrapping;
     roadTex.wrapT = THREE.RepeatWrapping;
@@ -289,7 +281,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     roadTex.needsUpdate = true;
   }, [roadTex]);
 
-  // Init instanced: dashes + side
   useEffect(() => {
     if (dashIM.current) {
       for (let i = 0; i < dashes.length; i++) {
@@ -314,7 +305,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     }
   }, [dashes.length, sideLines.length, tmp]);
 
-  // Init instanced: neons
   useEffect(() => {
     const fillNeon = (ref, list) => {
       if (!ref.current) return;
@@ -322,7 +312,7 @@ function CityRunnerScene({ scrollRef, quality }) {
         const n = list[i];
         tmp.position.set(n.x, 0.03, neonZ.current[n.idx]);
         tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, n.len, 1); // geometry y=1 -> scala alla lunghezza
+        tmp.scale.set(1, n.len, 1);
         tmp.updateMatrix();
         ref.current.setMatrixAt(i, tmp.matrix);
       }
@@ -334,7 +324,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     fillNeon(neonPinkIM, neonGroups.pink);
   }, [neonGroups, tmp]);
 
-  // Init instanced: tubes
   useEffect(() => {
     if (!tubeIM.current) return;
     for (let i = 0; i < tubes.length; i++) {
@@ -347,7 +336,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     tubeIM.current.instanceMatrix.needsUpdate = true;
   }, [tubes.length, tmp]);
 
-  // Init instanced: buildings (dark/cool x left/right)
   useEffect(() => {
     const fillBuildings = (ref, list, side) => {
       if (!ref.current) return;
@@ -387,12 +375,10 @@ function CityRunnerScene({ scrollRef, quality }) {
       group.current.position.y = 0.85 + Math.sin(t * 7.7) * 0.03;
     }
 
-    // road UV scroll
     roadTex.offset.y -= dz * 0.0032;
 
     const wrap = (z) => (z > zStart ? z - ROAD_LOOP : z);
 
-    // Update dashes
     if (dashIM.current) {
       for (let i = 0; i < dashZ.current.length; i++) {
         dashZ.current[i] = wrap(dashZ.current[i] + dz);
@@ -405,7 +391,6 @@ function CityRunnerScene({ scrollRef, quality }) {
       dashIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    // Update sidelines
     if (sideIM.current) {
       for (let i = 0; i < sideZ.current.length; i++) {
         sideZ.current[i] = wrap(sideZ.current[i] + dz * 0.95);
@@ -418,7 +403,6 @@ function CityRunnerScene({ scrollRef, quality }) {
       sideIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    // Update neons
     const updateNeonList = (ref, list, speedMul = 1.06) => {
       if (!ref.current) return;
       for (let i = 0; i < list.length; i++) {
@@ -437,7 +421,6 @@ function CityRunnerScene({ scrollRef, quality }) {
     updateNeonList(neonVioletIM, neonGroups.violet);
     updateNeonList(neonPinkIM, neonGroups.pink);
 
-    // Update tubes
     if (tubeIM.current) {
       for (let i = 0; i < tubeZ.current.length; i++) {
         tubeZ.current[i] = wrap(tubeZ.current[i] + dz * 1.02);
@@ -450,7 +433,6 @@ function CityRunnerScene({ scrollRef, quality }) {
       tubeIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    // Update buildings (dark/cool share same Z list)
     const updateBuildings = (ref, list, side, speedMul = 0.78) => {
       if (!ref.current) return;
       for (let i = 0; i < list.length; i++) {
@@ -480,19 +462,10 @@ function CityRunnerScene({ scrollRef, quality }) {
         intensity={0.95}
         color={PALETTE.blueLight}
       />
-      <pointLight
-        position={[-12, 7, -8]}
-        intensity={1.3}
-        color={PALETTE.violet}
-      />
-      <pointLight
-        position={[12, 7, -12]}
-        intensity={1.1}
-        color={PALETTE.blue}
-      />
+      <pointLight position={[-12, 7, -8]} intensity={1.3} color={PALETTE.violet} />
+      <pointLight position={[12, 7, -12]} intensity={1.1} color={PALETTE.blue} />
       <fog attach="fog" args={[PALETTE.bg, 8, 95]} />
 
-      {/* ROAD */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0, -85]}>
         <planeGeometry args={[16.2, 260]} />
         <meshStandardMaterial
@@ -503,13 +476,9 @@ function CityRunnerScene({ scrollRef, quality }) {
         />
       </mesh>
 
-      {/* INSTANCED: dashes */}
       <instancedMesh ref={dashIM} args={[dashGeo, dashMat, dashes.length]} />
-
-      {/* INSTANCED: side lines */}
       <instancedMesh ref={sideIM} args={[sideGeo, sideMat, sideLines.length]} />
 
-      {/* INSTANCED: neons per colore */}
       <instancedMesh
         ref={neonBlueIM}
         args={[neonGeo, neonMatBlue, neonGroups.blue.length]}
@@ -523,10 +492,8 @@ function CityRunnerScene({ scrollRef, quality }) {
         args={[neonGeo, neonMatPink, neonGroups.pink.length]}
       />
 
-      {/* INSTANCED: tubes */}
       <instancedMesh ref={tubeIM} args={[tubeGeo, tubeMat, tubes.length]} />
 
-      {/* INSTANCED: buildings */}
       <instancedMesh
         ref={bDarkL}
         args={[buildingGeo, bDarkMat, buildingGroups.dark.length]}
@@ -550,6 +517,7 @@ function CityRunnerScene({ scrollRef, quality }) {
 export default function CityRunnerBackground({
   navHeight = 70,
   scrollYProgress,
+  showStats = true,
 }) {
   const [webglOk, setWebglOk] = useState(true);
   const [quality] = useState(() => pickQuality());
@@ -568,8 +536,7 @@ export default function CityRunnerBackground({
   }, [scrollYProgress]);
 
   const dpr = quality === "low" ? 1 : quality === "mid" ? 1.25 : 1.5;
-  const enableBloom = quality !== "low"; // low = BLOOM OFF
-
+  const enableBloom = quality !== "low";
   const canvasElRef = useRef(null);
 
   useEffect(() => {
@@ -586,50 +553,55 @@ export default function CityRunnerBackground({
   }, [canvasElRef.current]);
 
   return (
-    <div
-      className="fixed inset-x-0 pointer-events-none z-0"
-      style={{ top: navHeight, height: `calc(100vh - ${navHeight}px)` }}
-    >
-      {!webglOk ? (
-        <div className="absolute inset-0 bg-[var(--bg-gradient)] opacity-90" />
-      ) : (
-        <Canvas
-          frameloop="always"
-          dpr={dpr}
-          performance={{ min: 0.5 }}
-          gl={{
-            antialias: false,
-            alpha: true,
-            powerPreference: "high-performance",
-            stencil: false,
-            depth: true,
-            preserveDrawingBuffer: false,
-          }}
-          style={{ width: "100%", height: "100%" }}
-          camera={{ position: [0, 5.2, 14], fov: 58, near: 0.1, far: 260 }}
-          onCreated={({ gl }) => {
-            canvasElRef.current = gl.domElement;
-          }}
-        >
-          <color attach="background" args={[PALETTE.bg]} />
-
-          <CityRunnerScene scrollRef={scrollRef} quality={quality} />
-
-          {enableBloom && (
-            <EffectComposer>
-              <Bloom
-                intensity={quality === "mid" ? 0.6 : 0.85}
-                mipmapBlur
-                luminanceThreshold={quality === "mid" ? 0.35 : 0.25}
-                luminanceSmoothing={0.25}
-              />
-            </EffectComposer>
-          )}
-        </Canvas>
+    <>
+      {showStats && webglOk && (
+        <FpsOverlay bottom={12} right={12} zIndex={100001} />
       )}
 
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(53,210,255,0.10),transparent_45%),radial-gradient(circle_at_bottom,rgba(111,47,217,0.12),transparent_50%)]" />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/35" />
-    </div>
+      <div
+        className="fixed inset-x-0 pointer-events-none z-0"
+        style={{ top: navHeight, height: `calc(100vh - ${navHeight}px)` }}
+      >
+        {!webglOk ? (
+          <div className="absolute inset-0 bg-[var(--bg-gradient)] opacity-90" />
+        ) : (
+          <Canvas
+            frameloop="always"
+            dpr={dpr}
+            performance={{ min: 0.5 }}
+            gl={{
+              antialias: false,
+              alpha: true,
+              powerPreference: "high-performance",
+              stencil: false,
+              depth: true,
+              preserveDrawingBuffer: false,
+            }}
+            style={{ width: "100%", height: "100%" }}
+            camera={{ position: [0, 5.2, 14], fov: 58, near: 0.1, far: 260 }}
+            onCreated={({ gl }) => {
+              canvasElRef.current = gl.domElement;
+            }}
+          >
+            <color attach="background" args={[PALETTE.bg]} />
+            <CityRunnerScene scrollRef={scrollRef} quality={quality} />
+
+            {enableBloom && (
+              <EffectComposer>
+                <Bloom
+                  intensity={quality === "mid" ? 0.6 : 0.85}
+                  mipmapBlur
+                  luminanceThreshold={quality === "mid" ? 0.35 : 0.25}
+                  luminanceSmoothing={0.25}
+                />
+              </EffectComposer>
+            )}
+          </Canvas>
+        )}
+
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(53,210,255,0.10),transparent_45%),radial-gradient(circle_at_bottom,rgba(111,47,217,0.12),transparent_50%)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/35" />
+      </div>
+    </>
   );
 }

@@ -126,7 +126,6 @@ const socialLinks = [
     href: "https://www.tiktok.com/@tuo-profilo",
     Icon: Music2,
   },
-  ,
   {
     id: "youtube",
     name: "YouTube",
@@ -396,7 +395,11 @@ export default function HowToConnect() {
   return (
     <div className="relative overflow-x-hidden">
       {/* ✅ Sfondo City Runner sotto (z-0) */}
-      <CityRunnerBackground navHeight={70} scrollYProgress={scrollYProgress} />
+      <CityRunnerBackground
+        navHeight={70}
+        scrollYProgress={scrollYProgress}
+        showStats
+      />
 
       {/* ✅ Contenuto sopra (z-10) */}
       <section
