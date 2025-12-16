@@ -327,7 +327,7 @@ function TV({ act, switching, onRequestFullscreen, brandLogo }) {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
+              {/* <button
                 type="button"
                 onClick={() => act.unlocked && onRequestFullscreen?.()}
                 disabled={!act.unlocked}
@@ -337,7 +337,7 @@ function TV({ act, switching, onRequestFullscreen, brandLogo }) {
               >
                 <Expand className="w-4 h-4" />
                 Clicca per ingrandire
-              </button>
+              </button> */}
 
               <div className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-white/10 bg-black/20 text-[11px] text-[var(--color-text-muted)]">
                 <Volume2 className="w-4 h-4" />
