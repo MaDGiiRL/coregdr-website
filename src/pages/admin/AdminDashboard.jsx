@@ -184,6 +184,16 @@ export default function AdminDashboard() {
   const softPanel =
     "rounded-2xl border border-[var(--color-border)] bg-black/20";
 
+  // --- MODAL: user characters
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userCharacters, setUserCharacters] = useState([]);
+  const [userCharsLoading, setUserCharsLoading] = useState(false);
+  const [userCharsError, setUserCharsError] = useState("");
+
+  // server logs extra filters
+  const [srvPluginFilter, setSrvPluginFilter] = useState("ALL");
+
   const writeLog = async (type, message, meta = {}) => {
     try {
       const res = await supabase.from("logs").insert({
@@ -331,7 +341,7 @@ export default function AdminDashboard() {
         setUsers(
           (usersData || []).map((u) => {
             const stList = accessMap.get(u.discord_id) ?? [];
-            
+
             let lastServerJoinAt = null;
             let hoursPlayed = 0;
 
@@ -415,6 +425,79 @@ export default function AdminDashboard() {
     }
   };
 
+  const openUserModal = async (u) => {
+    setSelectedUser(u);
+    setUserModalOpen(true);
+    setUserCharacters([]);
+    setUserCharsError("");
+    setUserCharsLoading(true);
+
+    try {
+      // JOIN: characters -> profiles (per filtrare via discord_id)
+      // Se hai already discord_id su characters, puoi semplificare con .eq("discord_id", u.discord_id)
+      const { data, error } = await supabase
+        .from("characters")
+        .select(
+          `
+        id,
+        created_at,
+        allowing,
+        status,
+        job,
+        firstname,
+        lastname,
+        user_id,
+        profiles!inner(discord_id)
+      `
+        )
+        .eq("profiles.discord_id", u.discord_id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      // Mappa accessMap per questo discord id: endpoint -> { lastServerJoinAt, hoursPlayed }
+      const stList = accessMap.get(u.discord_id) ?? [];
+      let lastServerJoinAt = null;
+      let hoursPlayed = 0;
+
+      stList.forEach((userMap) => {
+        for (const [, data] of userMap) {
+          if (data.lastServerJoinAt) {
+            const d = new Date(data.lastServerJoinAt);
+            if (!lastServerJoinAt || d > lastServerJoinAt) lastServerJoinAt = d;
+          }
+          hoursPlayed += Number(data.hoursPlayed ?? 0);
+        }
+      });
+
+      setUserCharacters(
+        (data || []).map((ch) => ({
+          id: ch.id,
+          createdAt: ch.created_at,
+          status: ch.status ?? "none",
+          job: (ch.job ?? "").trim(),
+          name:
+            [ch.firstname, ch.lastname].filter(Boolean).join(" ").trim() ||
+            `PG #${ch.id}`,
+          lastServerJoinAt,
+          hoursPlayed,
+        }))
+      );
+    } catch (e) {
+      console.error(e);
+      setUserCharsError("Impossibile caricare i personaggi di questo utente.");
+    } finally {
+      setUserCharsLoading(false);
+    }
+  };
+
+  const closeUserModal = () => {
+    setUserModalOpen(false);
+    setSelectedUser(null);
+    setUserCharacters([]);
+    setUserCharsError("");
+  };
+
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -436,7 +519,7 @@ export default function AdminDashboard() {
           .from("logs")
           .select("id, type, message, created_at")
           .order("created_at", { ascending: false })
-          .limit(1000)
+          .limit(1000);
 
         if (!alive) return;
         if (!error) {
@@ -483,7 +566,6 @@ export default function AdminDashboard() {
   const roleLabel = (u) =>
     u.isAdmin ? "Admin" : u.isMod ? "Whitelister" : "User";
 
-  // ✅ USERS: filtro completo (search + job + role + bgStatus)
   const filteredUsers = useMemo(() => {
     let base = users;
 
@@ -507,6 +589,7 @@ export default function AdminDashboard() {
     return base;
   }, [users, userSearch, jobFilter, roleFilter, bgFilter]);
 
+  
   // ✅ LOGS: opzioni + filtro
   const logTypeOptions = useMemo(() => {
     const set = new Set(
@@ -543,6 +626,14 @@ export default function AdminDashboard() {
     return ["ALL", ...list];
   }, [serverLogs]);
 
+  const srvPluginOptions = useMemo(() => {
+    const set = new Set(
+      (serverLogs || []).map((l) => (l.plugin || "unknown").toString())
+    );
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b));
+    return ["ALL", ...list];
+  }, [serverLogs]);
+
   const filteredServerLogs = useMemo(() => {
     let base = serverLogs;
 
@@ -561,8 +652,12 @@ export default function AdminDashboard() {
       base = base.filter((l) => (l.plugin_type || "GENERIC") === srvTypeFilter);
     }
 
+    if (srvPluginFilter !== "ALL") {
+      base = base.filter((l) => (l.plugin || "unknown") === srvPluginFilter);
+    }
+
     return base;
-  }, [serverLogs, srvSearch, srvTypeFilter]);
+  }, [serverLogs, srvSearch, srvTypeFilter, srvPluginFilter]);
 
   // ✅ reset pagine quando cambiano filtri
   useEffect(
@@ -570,7 +665,10 @@ export default function AdminDashboard() {
     [jobFilter, userSearch, roleFilter, bgFilter]
   );
   useEffect(() => setLogsPage(1), [logTypeFilter, logSearch]);
-  useEffect(() => setServerLogsPage(1), [srvTypeFilter, srvSearch]);
+  useEffect(
+    () => setServerLogsPage(1),
+    [srvTypeFilter, srvPluginFilter, srvSearch]
+  );
 
   const overviewUsersTotalPages = Math.max(
     1,
@@ -1144,12 +1242,22 @@ export default function AdminDashboard() {
                   const currentRole = roleLabel(u);
 
                   return (
-                    <div
+                    <motion.button
                       key={u.id}
-                      className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
+                      type="button"
+                      onClick={() => openUserModal(u)}
+                      whileTap={{ scale: reduce ? 1 : 0.99 }}
+                      className="
+    w-full text-left
+    rounded-2xl border border-[var(--color-border)]
+    bg-black/20 px-4 py-3
+    hover:bg-white/5 transition
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)]
+  "
                     >
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div className="min-w-0">
+                          {/* nome ora NON è più button */}
                           <p className="font-semibold truncate">
                             {u.discordName}
                           </p>
@@ -1186,6 +1294,7 @@ export default function AdminDashboard() {
                             })}
                           </p>
 
+                          {/* ✅ SOLO badge ruolo */}
                           <div className="mt-2 flex flex-wrap gap-2">
                             <Badge
                               variant={roleVariant(currentRole)}
@@ -1199,24 +1308,6 @@ export default function AdminDashboard() {
                             >
                               {currentRole}
                             </Badge>
-
-                            <Badge
-                              variant={bgVariant(u.bgStatus)}
-                              icon={FileText}
-                              title="Stato background"
-                            >
-                              {u.bgStatus === "none"
-                                ? "BG: —"
-                                : `BG: ${u.bgStatus}`}
-                            </Badge>
-
-                            <Badge
-                              variant="job"
-                              icon={Briefcase}
-                              title="Job (dal background)"
-                            >
-                              {u.job ? `Job: ${u.job}` : "Job: —"}
-                            </Badge>
                           </div>
                         </div>
 
@@ -1224,7 +1315,7 @@ export default function AdminDashboard() {
                           {/* spazio azioni future */}
                         </div>
                       </div>
-                    </div>
+                    </motion.button>
                   );
                 })}
 
@@ -1409,9 +1500,24 @@ export default function AdminDashboard() {
                   <input
                     value={srvSearch}
                     onChange={(e) => setSrvSearch(e.target.value)}
-                    placeholder="Cerca plugin/type/descrizione..."
+                    placeholder="Cerca testo (plugin/type/descrizione)..."
                     className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
                   />
+                </div>
+
+                <div className="relative">
+                  <Plug className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <select
+                    value={srvPluginFilter}
+                    onChange={(e) => setSrvPluginFilter(e.target.value)}
+                    className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
+                  >
+                    {srvPluginOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p === "ALL" ? "Tutti i plugin" : p}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="relative">
@@ -1496,6 +1602,149 @@ export default function AdminDashboard() {
               </div>
             </div>
           </motion.section>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {userModalOpen && (
+          <motion.div
+            className="fixed inset-0 z-[80] flex items-center justify-center px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            {/* overlay */}
+            <button
+              type="button"
+              aria-label="Chiudi"
+              onClick={closeUserModal}
+              className="absolute inset-0 bg-black/70"
+            />
+
+            {/* modal */}
+            <motion.div
+              initial={{
+                opacity: 0,
+                y: reduce ? 0 : 12,
+                scale: reduce ? 1 : 0.98,
+              }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{
+                opacity: 0,
+                y: reduce ? 0 : 10,
+                scale: reduce ? 1 : 0.98,
+              }}
+              transition={{ duration: 0.18 }}
+              className="relative w-full max-w-3xl rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur shadow-[0_30px_120px_rgba(0,0,0,0.55)]"
+            >
+              <div className="p-5 md:p-6 border-b border-white/10">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+                      Personaggi utente
+                    </p>
+                    <h3 className="mt-1 text-lg md:text-xl font-semibold truncate">
+                      {selectedUser?.discordName ?? "Utente"}
+                    </h3>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Discord ID:{" "}
+                      <span className="font-mono">
+                        {selectedUser?.discord_id}
+                      </span>
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeUserModal}
+                    className="px-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 hover:bg-white/5 text-xs font-semibold"
+                  >
+                    Chiudi
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-5 md:p-6">
+                {userCharsLoading && (
+                  <div className="text-xs text-[var(--color-text-muted)]">
+                    Caricamento personaggi…
+                  </div>
+                )}
+
+                {!userCharsLoading && userCharsError && (
+                  <div className="text-xs text-rose-300">{userCharsError}</div>
+                )}
+
+                {!userCharsLoading && !userCharsError && (
+                  <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+                    {userCharacters.map((ch) => (
+                      <div
+                        key={ch.id}
+                        className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
+                      >
+                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate">{ch.name}</p>
+
+                            <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                              Creato il{" "}
+                              {new Date(ch.createdAt).toLocaleString("it-IT", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })}
+                            </p>
+
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Badge
+                                variant={bgVariant(ch.status)}
+                                icon={FileText}
+                              >
+                                {ch.status === "none"
+                                  ? "BG: —"
+                                  : `BG: ${ch.status}`}
+                              </Badge>
+
+                              <Badge variant="job" icon={Briefcase}>
+                                {ch.job ? `Job: ${ch.job}` : "Job: —"}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-[var(--color-text-muted)] space-y-1 md:text-right">
+                            <div>
+                              Ultimo accesso:{" "}
+                              <span className="text-white/80">
+                                {ch.lastServerJoinAt
+                                  ? new Date(
+                                      ch.lastServerJoinAt
+                                    ).toLocaleString("it-IT", {
+                                      dateStyle: "short",
+                                      timeStyle: "short",
+                                    })
+                                  : "—"}
+                              </span>
+                            </div>
+                            <div>
+                              Ore in gioco:{" "}
+                              <span className="text-white/80 font-semibold">
+                                {Number(ch.hoursPlayed || 0).toFixed(1)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {userCharacters.length === 0 && (
+                      <div className="text-xs text-[var(--color-text-muted)]">
+                        Nessun personaggio trovato per questo utente.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </section>

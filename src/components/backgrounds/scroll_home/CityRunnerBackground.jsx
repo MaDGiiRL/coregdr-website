@@ -1,8 +1,6 @@
-// src/components/backgrounds/scroll_home/CityRunnerBackground.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 
 import { createGtaTexturePack } from "./gtaTextures";
@@ -27,27 +25,171 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-function CityRunnerScene({ scrollRef }) {
+function pickQuality() {
+  const cores = navigator.hardwareConcurrency || 4;
+  const mem = navigator.deviceMemory || 4; // può essere undefined su alcuni browser
+  const isLow = cores <= 4 || mem <= 4;
+  const isMid = cores <= 8 || mem <= 8;
+  if (isLow) return "low";
+  if (isMid) return "mid";
+  return "high";
+}
+
+function CityRunnerScene({ scrollRef, quality }) {
   const group = useRef();
 
   const { roadTex, buildingTex, neonStripeTex } = useMemo(
-    () => createGtaTexturePack({ palette: PALETTE }),
-    []
+    () => createGtaTexturePack({ palette: PALETTE, quality }),
+    [quality]
   );
+
+  // --------- QUALITY SCALING ---------
+  const Q = useMemo(() => {
+    if (quality === "low") return { neonMul: 0.45, tubeMul: 0.5, bMul: 0.55 };
+    if (quality === "mid") return { neonMul: 0.7, tubeMul: 0.75, bMul: 0.8 };
+    return { neonMul: 1, tubeMul: 1, bMul: 1 };
+  }, [quality]);
 
   const speedRef = useRef(0);
   const baseSpeed = 18;
 
-  const dashRefs = useRef([]);
-  const sideRefs = useRef([]);
-  const neonRefs = useRef([]);
-  const tubeRefs = useRef([]);
-  const bLRefs = useRef([]);
-  const bRRefs = useRef([]);
-
   const ROAD_LOOP = 220;
   const zStart = 18;
 
+  // --------- SHARED GEOMETRIES ---------
+  const dashGeo = useMemo(() => new THREE.PlaneGeometry(0.22, 2.2), []);
+  const sideGeo = useMemo(() => new THREE.PlaneGeometry(0.16, 5.0), []);
+  const neonGeo = useMemo(() => new THREE.BoxGeometry(0.28, 1, 0.05), []);
+  const tubeGeo = useMemo(() => new THREE.BoxGeometry(0.18, 1.9, 0.06), []);
+  const buildingGeo = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
+
+  // --------- SHARED MATERIALS ---------
+  const dashMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#e8f2ff",
+        emissive: new THREE.Color(PALETTE.blueLight),
+        emissiveIntensity: 0.8,
+        roughness: 0.55,
+        metalness: 0.1,
+      }),
+    []
+  );
+
+  const sideMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: PALETTE.violetLight,
+        emissive: new THREE.Color(PALETTE.blue),
+        emissiveIntensity: 0.26,
+        roughness: 0.7,
+        metalness: 0.05,
+      }),
+    []
+  );
+
+  // Neons: 3 instanced (1 per colore) = ancora pochissime draw calls
+  const neonMatBlue = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: PALETTE.blue,
+        emissive: new THREE.Color(PALETTE.blue),
+        emissiveIntensity: 1.15,
+        roughness: 0.22,
+        metalness: 0.18,
+      }),
+    []
+  );
+  const neonMatViolet = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: PALETTE.violet,
+        emissive: new THREE.Color(PALETTE.violet),
+        emissiveIntensity: 1.15,
+        roughness: 0.22,
+        metalness: 0.18,
+      }),
+    []
+  );
+  const neonMatPink = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: PALETTE.pink,
+        emissive: new THREE.Color(PALETTE.pink),
+        emissiveIntensity: 1.0,
+        roughness: 0.22,
+        metalness: 0.18,
+      }),
+    []
+  );
+
+  const tubeMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: neonStripeTex,
+        color: PALETTE.blue,
+        emissive: new THREE.Color(PALETTE.blue),
+        emissiveIntensity: 1.0,
+        roughness: 0.2,
+        metalness: 0.25,
+      }),
+    [neonStripeTex]
+  );
+
+  // Buildings: 4 instanced (cool L/R, dark L/R)
+  const bDarkMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: buildingTex,
+        color: PALETTE.bDark,
+        emissive: new THREE.Color("#000000"),
+        emissiveIntensity: 0,
+        roughness: 0.98,
+        metalness: 0.04,
+      }),
+    [buildingTex]
+  );
+
+  const bCoolLeftMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: buildingTex,
+        color: PALETTE.bCool,
+        emissive: new THREE.Color(PALETTE.violet),
+        emissiveIntensity: 0.18,
+        roughness: 0.98,
+        metalness: 0.04,
+      }),
+    [buildingTex]
+  );
+
+  const bCoolRightMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        map: buildingTex,
+        color: PALETTE.bCool,
+        emissive: new THREE.Color(PALETTE.blue),
+        emissiveIntensity: 0.18,
+        roughness: 0.98,
+        metalness: 0.04,
+      }),
+    [buildingTex]
+  );
+
+  // --------- INSTANCED REFS ---------
+  const dashIM = useRef();
+  const sideIM = useRef();
+  const neonBlueIM = useRef();
+  const neonVioletIM = useRef();
+  const neonPinkIM = useRef();
+  const tubeIM = useRef();
+
+  const bDarkL = useRef();
+  const bDarkR = useRef();
+  const bCoolL = useRef();
+  const bCoolR = useRef();
+
+  // --------- DATA ARRAYS ---------
   const dashes = useMemo(() => {
     const gap = 4.2;
     const count = Math.floor(ROAD_LOOP / gap);
@@ -65,37 +207,39 @@ function CityRunnerScene({ scrollRef }) {
 
   const neons = useMemo(() => {
     const gap = 4.0;
-    const count = Math.floor(ROAD_LOOP / gap) + 44;
-    return Array.from({ length: count }, (_, i) => {
+    const baseCount = Math.floor(ROAD_LOOP / gap) + 44;
+    const count = Math.floor(baseCount * Q.neonMul);
+
+    const arr = [];
+    for (let i = 0; i < count; i++) {
       const pick = Math.random();
-      const tint =
-        pick < 0.52
-          ? PALETTE.blue
-          : pick < 0.86
-          ? PALETTE.violet
-          : PALETTE.pink;
-      return {
+      const tint = pick < 0.52 ? "blue" : pick < 0.86 ? "violet" : "pink";
+      arr.push({
         z: -i * gap - Math.random() * 2.8,
         x: (Math.random() < 0.5 ? -1 : 1) * (6.1 + Math.random() * 1.8),
         tint,
         len: 2.1 + Math.random() * 4.4,
-      };
-    });
-  }, []);
+      });
+    }
+    return arr;
+  }, [Q.neonMul]);
 
   const tubes = useMemo(() => {
     const gap = 6.0;
-    const count = Math.floor(ROAD_LOOP / gap) + 26;
+    const baseCount = Math.floor(ROAD_LOOP / gap) + 26;
+    const count = Math.floor(baseCount * Q.tubeMul);
+
     return Array.from({ length: count }, (_, i) => ({
       z: -i * gap - Math.random() * 3.8,
       x: (Math.random() < 0.5 ? -1 : 1) * (3.9 + Math.random() * 1.2),
-      tint: Math.random() < 0.6 ? PALETTE.blue : PALETTE.violetLight,
     }));
-  }, []);
+  }, [Q.tubeMul]);
 
-  const buildings = useMemo(() => {
+  const buildingsAll = useMemo(() => {
     const gap = 3.8;
-    const count = Math.floor((ROAD_LOOP + 40) / gap);
+    const baseCount = Math.floor((ROAD_LOOP + 40) / gap);
+    const count = Math.floor(baseCount * Q.bMul);
+
     return Array.from({ length: count }, (_, i) => ({
       z: -i * gap - 16,
       h: 7 + Math.random() * 26,
@@ -105,15 +249,126 @@ function CityRunnerScene({ scrollRef }) {
       xR: 9.2 + Math.random() * 4.2,
       cool: Math.random() < 0.55,
     }));
-  }, []);
+  }, [Q.bMul]);
 
+  const neonGroups = useMemo(() => {
+    const blue = [];
+    const violet = [];
+    const pink = [];
+    neons.forEach((n, idx) => {
+      if (n.tint === "blue") blue.push({ ...n, idx });
+      else if (n.tint === "violet") violet.push({ ...n, idx });
+      else pink.push({ ...n, idx });
+    });
+    return { blue, violet, pink };
+  }, [neons]);
+
+  const buildingGroups = useMemo(() => {
+    const dark = [];
+    const cool = [];
+    buildingsAll.forEach((b, idx) => {
+      (b.cool ? cool : dark).push({ ...b, idx });
+    });
+    return { dark, cool };
+  }, [buildingsAll]);
+
+  // Z arrays mutabili (evita leggere/scrivere mesh ad ogni frame)
+  const dashZ = useRef(dashes.map((d) => d.z));
+  const sideZ = useRef(sideLines.map((s) => s.z));
+  const neonZ = useRef(neons.map((n) => n.z));
+  const tubeZ = useRef(tubes.map((t) => t.z));
+  const bZ = useRef(buildingsAll.map((b) => b.z));
+
+  const tmp = useMemo(() => new THREE.Object3D(), []);
+
+  // road texture wrapping
   useEffect(() => {
-    // tile road
     roadTex.wrapS = THREE.RepeatWrapping;
     roadTex.wrapT = THREE.RepeatWrapping;
     roadTex.repeat.set(1, 8);
     roadTex.needsUpdate = true;
   }, [roadTex]);
+
+  // Init instanced: dashes + side
+  useEffect(() => {
+    if (dashIM.current) {
+      for (let i = 0; i < dashes.length; i++) {
+        tmp.position.set(0, 0.02, dashZ.current[i]);
+        tmp.rotation.set(-Math.PI / 2, 0, 0);
+        tmp.scale.set(1, 1, 1);
+        tmp.updateMatrix();
+        dashIM.current.setMatrixAt(i, tmp.matrix);
+      }
+      dashIM.current.instanceMatrix.needsUpdate = true;
+    }
+
+    if (sideIM.current) {
+      for (let i = 0; i < sideLines.length; i++) {
+        tmp.position.set(sideLines[i].x, 0.02, sideZ.current[i]);
+        tmp.rotation.set(-Math.PI / 2, 0, 0);
+        tmp.scale.set(1, 1, 1);
+        tmp.updateMatrix();
+        sideIM.current.setMatrixAt(i, tmp.matrix);
+      }
+      sideIM.current.instanceMatrix.needsUpdate = true;
+    }
+  }, [dashes.length, sideLines.length, tmp]);
+
+  // Init instanced: neons
+  useEffect(() => {
+    const fillNeon = (ref, list) => {
+      if (!ref.current) return;
+      for (let i = 0; i < list.length; i++) {
+        const n = list[i];
+        tmp.position.set(n.x, 0.03, neonZ.current[n.idx]);
+        tmp.rotation.set(-Math.PI / 2, 0, 0);
+        tmp.scale.set(1, n.len, 1); // geometry y=1 -> scala alla lunghezza
+        tmp.updateMatrix();
+        ref.current.setMatrixAt(i, tmp.matrix);
+      }
+      ref.current.instanceMatrix.needsUpdate = true;
+    };
+
+    fillNeon(neonBlueIM, neonGroups.blue);
+    fillNeon(neonVioletIM, neonGroups.violet);
+    fillNeon(neonPinkIM, neonGroups.pink);
+  }, [neonGroups, tmp]);
+
+  // Init instanced: tubes
+  useEffect(() => {
+    if (!tubeIM.current) return;
+    for (let i = 0; i < tubes.length; i++) {
+      tmp.position.set(tubes[i].x, 0.035, tubeZ.current[i]);
+      tmp.rotation.set(-Math.PI / 2, 0, 0);
+      tmp.scale.set(1, 1, 1);
+      tmp.updateMatrix();
+      tubeIM.current.setMatrixAt(i, tmp.matrix);
+    }
+    tubeIM.current.instanceMatrix.needsUpdate = true;
+  }, [tubes.length, tmp]);
+
+  // Init instanced: buildings (dark/cool x left/right)
+  useEffect(() => {
+    const fillBuildings = (ref, list, side) => {
+      if (!ref.current) return;
+      for (let i = 0; i < list.length; i++) {
+        const b = list[i];
+        const x = side === "L" ? b.xL : b.xR;
+        const z = bZ.current[b.idx];
+        tmp.position.set(x, b.h / 2, z);
+        tmp.rotation.set(0, 0, 0);
+        tmp.scale.set(b.w, b.h, b.d);
+        tmp.updateMatrix();
+        ref.current.setMatrixAt(i, tmp.matrix);
+      }
+      ref.current.instanceMatrix.needsUpdate = true;
+    };
+
+    fillBuildings(bDarkL, buildingGroups.dark, "L");
+    fillBuildings(bDarkR, buildingGroups.dark, "R");
+    fillBuildings(bCoolL, buildingGroups.cool, "L");
+    fillBuildings(bCoolR, buildingGroups.cool, "R");
+  }, [buildingGroups, tmp]);
 
   useFrame(({ clock }, delta) => {
     const t = clock.getElapsedTime();
@@ -132,45 +387,89 @@ function CityRunnerScene({ scrollRef }) {
       group.current.position.y = 0.85 + Math.sin(t * 7.7) * 0.03;
     }
 
-    // road scroll UV
+    // road UV scroll
     roadTex.offset.y -= dz * 0.0032;
 
     const wrap = (z) => (z > zStart ? z - ROAD_LOOP : z);
 
-    for (let i = 0; i < dashes.length; i++) {
-      const m = dashRefs.current[i];
-      if (!m) continue;
-      m.position.z = wrap(m.position.z + dz);
+    // Update dashes
+    if (dashIM.current) {
+      for (let i = 0; i < dashZ.current.length; i++) {
+        dashZ.current[i] = wrap(dashZ.current[i] + dz);
+        tmp.position.set(0, 0.02, dashZ.current[i]);
+        tmp.rotation.set(-Math.PI / 2, 0, 0);
+        tmp.scale.set(1, 1, 1);
+        tmp.updateMatrix();
+        dashIM.current.setMatrixAt(i, tmp.matrix);
+      }
+      dashIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    for (let i = 0; i < sideLines.length; i++) {
-      const m = sideRefs.current[i];
-      if (!m) continue;
-      m.position.z = wrap(m.position.z + dz * 0.95);
+    // Update sidelines
+    if (sideIM.current) {
+      for (let i = 0; i < sideZ.current.length; i++) {
+        sideZ.current[i] = wrap(sideZ.current[i] + dz * 0.95);
+        tmp.position.set(sideLines[i].x, 0.02, sideZ.current[i]);
+        tmp.rotation.set(-Math.PI / 2, 0, 0);
+        tmp.scale.set(1, 1, 1);
+        tmp.updateMatrix();
+        sideIM.current.setMatrixAt(i, tmp.matrix);
+      }
+      sideIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    for (let i = 0; i < neons.length; i++) {
-      const m = neonRefs.current[i];
-      if (!m) continue;
-      m.position.z = wrap(m.position.z + dz * 1.06);
-      const mat = m.material;
-      if (mat) mat.emissiveIntensity = 1.2 + Math.sin(t * 3.1 + i) * 0.9;
+    // Update neons
+    const updateNeonList = (ref, list, speedMul = 1.06) => {
+      if (!ref.current) return;
+      for (let i = 0; i < list.length; i++) {
+        const n = list[i];
+        neonZ.current[n.idx] = wrap(neonZ.current[n.idx] + dz * speedMul);
+        tmp.position.set(n.x, 0.03, neonZ.current[n.idx]);
+        tmp.rotation.set(-Math.PI / 2, 0, 0);
+        tmp.scale.set(1, n.len, 1);
+        tmp.updateMatrix();
+        ref.current.setMatrixAt(i, tmp.matrix);
+      }
+      ref.current.instanceMatrix.needsUpdate = true;
+    };
+
+    updateNeonList(neonBlueIM, neonGroups.blue);
+    updateNeonList(neonVioletIM, neonGroups.violet);
+    updateNeonList(neonPinkIM, neonGroups.pink);
+
+    // Update tubes
+    if (tubeIM.current) {
+      for (let i = 0; i < tubeZ.current.length; i++) {
+        tubeZ.current[i] = wrap(tubeZ.current[i] + dz * 1.02);
+        tmp.position.set(tubes[i].x, 0.035, tubeZ.current[i]);
+        tmp.rotation.set(-Math.PI / 2, 0, 0);
+        tmp.scale.set(1, 1, 1);
+        tmp.updateMatrix();
+        tubeIM.current.setMatrixAt(i, tmp.matrix);
+      }
+      tubeIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    for (let i = 0; i < tubes.length; i++) {
-      const m = tubeRefs.current[i];
-      if (!m) continue;
-      m.position.z = wrap(m.position.z + dz * 1.02);
-      const mat = m.material;
-      if (mat) mat.emissiveIntensity = 1.0 + Math.sin(t * 2.2 + i * 0.6) * 0.6;
-    }
+    // Update buildings (dark/cool share same Z list)
+    const updateBuildings = (ref, list, side, speedMul = 0.78) => {
+      if (!ref.current) return;
+      for (let i = 0; i < list.length; i++) {
+        const b = list[i];
+        bZ.current[b.idx] = wrap(bZ.current[b.idx] + dz * speedMul);
+        const x = side === "L" ? b.xL : b.xR;
+        tmp.position.set(x, b.h / 2, bZ.current[b.idx]);
+        tmp.rotation.set(0, 0, 0);
+        tmp.scale.set(b.w, b.h, b.d);
+        tmp.updateMatrix();
+        ref.current.setMatrixAt(i, tmp.matrix);
+      }
+      ref.current.instanceMatrix.needsUpdate = true;
+    };
 
-    for (let i = 0; i < buildings.length; i++) {
-      const L = bLRefs.current[i];
-      const R = bRRefs.current[i];
-      if (L) L.position.z = wrap(L.position.z + dz * 0.78);
-      if (R) R.position.z = wrap(R.position.z + dz * 0.78);
-    }
+    updateBuildings(bDarkL, buildingGroups.dark, "L");
+    updateBuildings(bDarkR, buildingGroups.dark, "R");
+    updateBuildings(bCoolL, buildingGroups.cool, "L");
+    updateBuildings(bCoolR, buildingGroups.cool, "R");
   });
 
   return (
@@ -193,6 +492,7 @@ function CityRunnerScene({ scrollRef }) {
       />
       <fog attach="fog" args={[PALETTE.bg, 8, 95]} />
 
+      {/* ROAD */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0, -85]}>
         <planeGeometry args={[16.2, 260]} />
         <meshStandardMaterial
@@ -203,112 +503,46 @@ function CityRunnerScene({ scrollRef }) {
         />
       </mesh>
 
-      {dashes.map((d, i) => (
-        <mesh
-          key={`dash-${i}`}
-          ref={(el) => (dashRefs.current[i] = el)}
-          rotation-x={-Math.PI / 2}
-          position={[0, 0.02, d.z]}
-        >
-          <planeGeometry args={[0.22, 2.2]} />
-          <meshStandardMaterial
-            color="#e8f2ff"
-            emissive={PALETTE.blueLight}
-            emissiveIntensity={0.8}
-            roughness={0.55}
-            metalness={0.1}
-          />
-        </mesh>
-      ))}
+      {/* INSTANCED: dashes */}
+      <instancedMesh ref={dashIM} args={[dashGeo, dashMat, dashes.length]} />
 
-      {sideLines.map((s, i) => (
-        <mesh
-          key={`side-${i}`}
-          ref={(el) => (sideRefs.current[i] = el)}
-          rotation-x={-Math.PI / 2}
-          position={[s.x, 0.02, s.z]}
-        >
-          <planeGeometry args={[0.16, 5.0]} />
-          <meshStandardMaterial
-            color={PALETTE.violetLight}
-            emissive={PALETTE.blue}
-            emissiveIntensity={0.26}
-            roughness={0.7}
-            metalness={0.05}
-          />
-        </mesh>
-      ))}
+      {/* INSTANCED: side lines */}
+      <instancedMesh ref={sideIM} args={[sideGeo, sideMat, sideLines.length]} />
 
-      {neons.map((n, i) => (
-        <mesh
-          key={`neon-${i}`}
-          ref={(el) => (neonRefs.current[i] = el)}
-          rotation-x={-Math.PI / 2}
-          position={[n.x, 0.03, n.z]}
-        >
-          <boxGeometry args={[0.28, n.len, 0.05]} />
-          <meshStandardMaterial
-            color={n.tint}
-            emissive={n.tint}
-            emissiveIntensity={1.35}
-            roughness={0.22}
-            metalness={0.18}
-          />
-        </mesh>
-      ))}
+      {/* INSTANCED: neons per colore */}
+      <instancedMesh
+        ref={neonBlueIM}
+        args={[neonGeo, neonMatBlue, neonGroups.blue.length]}
+      />
+      <instancedMesh
+        ref={neonVioletIM}
+        args={[neonGeo, neonMatViolet, neonGroups.violet.length]}
+      />
+      <instancedMesh
+        ref={neonPinkIM}
+        args={[neonGeo, neonMatPink, neonGroups.pink.length]}
+      />
 
-      {tubes.map((n, i) => (
-        <mesh
-          key={`tube-${i}`}
-          ref={(el) => (tubeRefs.current[i] = el)}
-          rotation-x={-Math.PI / 2}
-          position={[n.x, 0.035, n.z]}
-        >
-          <boxGeometry args={[0.18, 1.9, 0.06]} />
-          <meshStandardMaterial
-            map={neonStripeTex}
-            color={n.tint}
-            emissive={n.tint}
-            emissiveIntensity={1.15}
-            roughness={0.2}
-            metalness={0.25}
-          />
-        </mesh>
-      ))}
+      {/* INSTANCED: tubes */}
+      <instancedMesh ref={tubeIM} args={[tubeGeo, tubeMat, tubes.length]} />
 
-      {buildings.map((b, i) => (
-        <group key={`b-${i}`}>
-          <mesh
-            ref={(el) => (bLRefs.current[i] = el)}
-            position={[b.xL, b.h / 2, b.z]}
-          >
-            <boxGeometry args={[b.w, b.h, b.d]} />
-            <meshStandardMaterial
-              map={buildingTex}
-              color={b.cool ? PALETTE.bCool : PALETTE.bDark}
-              emissive={b.cool ? PALETTE.violet : "#000000"}
-              emissiveIntensity={b.cool ? 0.18 : 0}
-              roughness={0.98}
-              metalness={0.04}
-            />
-          </mesh>
-
-          <mesh
-            ref={(el) => (bRRefs.current[i] = el)}
-            position={[b.xR, b.h / 2, b.z]}
-          >
-            <boxGeometry args={[b.w, b.h, b.d]} />
-            <meshStandardMaterial
-              map={buildingTex}
-              color={b.cool ? PALETTE.bCool : PALETTE.bDark}
-              emissive={b.cool ? PALETTE.blue : "#000000"}
-              emissiveIntensity={b.cool ? 0.18 : 0}
-              roughness={0.98}
-              metalness={0.04}
-            />
-          </mesh>
-        </group>
-      ))}
+      {/* INSTANCED: buildings */}
+      <instancedMesh
+        ref={bDarkL}
+        args={[buildingGeo, bDarkMat, buildingGroups.dark.length]}
+      />
+      <instancedMesh
+        ref={bDarkR}
+        args={[buildingGeo, bDarkMat, buildingGroups.dark.length]}
+      />
+      <instancedMesh
+        ref={bCoolL}
+        args={[buildingGeo, bCoolLeftMat, buildingGroups.cool.length]}
+      />
+      <instancedMesh
+        ref={bCoolR}
+        args={[buildingGeo, bCoolRightMat, buildingGroups.cool.length]}
+      />
     </group>
   );
 }
@@ -318,6 +552,7 @@ export default function CityRunnerBackground({
   scrollYProgress,
 }) {
   const [webglOk, setWebglOk] = useState(true);
+  const [quality] = useState(() => pickQuality());
   const scrollRef = useRef(0);
 
   useEffect(() => {
@@ -329,11 +564,26 @@ export default function CityRunnerBackground({
   }, [scrollYProgress]);
 
   useEffect(() => {
-    // fallback: se scrollYProgress non arriva, almeno animazione idle
-    if (!scrollYProgress) {
-      scrollRef.current = 0.2;
-    }
+    if (!scrollYProgress) scrollRef.current = 0.2;
   }, [scrollYProgress]);
+
+  const dpr = quality === "low" ? 1 : quality === "mid" ? 1.25 : 1.5;
+  const enableBloom = quality !== "low"; // low = BLOOM OFF
+
+  const canvasElRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasElRef.current;
+    if (!canvas) return;
+
+    const onLost = (e) => {
+      e.preventDefault();
+      setWebglOk(false);
+    };
+
+    canvas.addEventListener("webglcontextlost", onLost, false);
+    return () => canvas.removeEventListener("webglcontextlost", onLost, false);
+  }, [canvasElRef.current]);
 
   return (
     <div
@@ -345,7 +595,8 @@ export default function CityRunnerBackground({
       ) : (
         <Canvas
           frameloop="always"
-          dpr={1}
+          dpr={dpr}
+          performance={{ min: 0.5 }}
           gl={{
             antialias: false,
             alpha: true,
@@ -357,34 +608,23 @@ export default function CityRunnerBackground({
           style={{ width: "100%", height: "100%" }}
           camera={{ position: [0, 5.2, 14], fov: 58, near: 0.1, far: 260 }}
           onCreated={({ gl }) => {
-            const canvas = gl.domElement;
-
-            const onLost = (e) => {
-              e.preventDefault();
-              setWebglOk(false);
-            };
-
-        
-            canvas.addEventListener("webglcontextlost", onLost, false);
-
-            return () => {
-              canvas.removeEventListener("webglcontextlost", onLost, false);
-            };
+            canvasElRef.current = gl.domElement;
           }}
         >
           <color attach="background" args={[PALETTE.bg]} />
 
-          <CityRunnerScene scrollRef={scrollRef} />
+          <CityRunnerScene scrollRef={scrollRef} quality={quality} />
 
-  
-          <EffectComposer>
-            <Bloom
-              intensity={0.85}
-              mipmapBlur
-              luminanceThreshold={0.25}
-              luminanceSmoothing={0.25}
-            />
-          </EffectComposer>
+          {enableBloom && (
+            <EffectComposer>
+              <Bloom
+                intensity={quality === "mid" ? 0.6 : 0.85}
+                mipmapBlur
+                luminanceThreshold={quality === "mid" ? 0.35 : 0.25}
+                luminanceSmoothing={0.25}
+              />
+            </EffectComposer>
+          )}
         </Canvas>
       )}
 
