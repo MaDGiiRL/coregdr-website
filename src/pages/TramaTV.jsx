@@ -106,7 +106,6 @@ export default function TramaTV() {
 
   return (
     <section className="relative min-h-screen overflow-hidden">
-
       <div className="relative z-10 max-w-6xl mx-auto px-4">
         {/* HEADER */}
         <header className="mb-10">
@@ -136,8 +135,8 @@ export default function TramaTV() {
             <ChevronLeft className="w-7 h-7" />
           </motion.button>
 
-          {/* TV */}
-          <div className="w-full max-w-[1040px]">
+          {/* TV + MODALE (CONFINATA NEL BOX) */}
+          <div className="w-full max-w-[1040px] relative overflow-hidden rounded-[56px]">
             <TV
               key={`tv-${idx}-${videoKey}`}
               act={act}
@@ -147,6 +146,56 @@ export default function TramaTV() {
                 if (act.unlocked) setOpen(true);
               }}
             />
+
+            {/* MODALE: UNA SOLA, DENTRO LA TV */}
+            <AnimatePresence>
+              {open && (
+                <>
+                  {/* overlay dentro il box */}
+                  <motion.button
+                    {...overlayAnim}
+                    className="absolute inset-0 z-[90] bg-black/80"
+                    onClick={() => setOpen(false)}
+                    aria-label="Chiudi"
+                    type="button"
+                  />
+
+                  {/* contenuto modale dentro il box */}
+                  <motion.div
+                    {...modalAnim}
+                    className="absolute inset-0 z-[91] p-3 md:p-5"
+                    role="dialog"
+                    aria-modal="true"
+                  >
+                    <div className="h-full w-full flex flex-col">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
+                            Visione
+                          </p>
+                          <p className="mt-0.5 font-semibold truncate">
+                            {act.label}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOpen(false)}
+                          className="h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-black/25 hover:bg-white/5 transition inline-flex items-center justify-center"
+                          aria-label="Chiudi"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* “schermo ingrandito” (solo video) */}
+                      <div className="flex-1 min-h-0 rounded-[34px] overflow-hidden border border-white/10 bg-black relative">
+                        <ZoomScreen act={act} />
+                      </div>
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
 
             {/* mobile arrows */}
             <div className="mt-6 flex md:hidden items-center justify-between gap-3">
@@ -188,58 +237,43 @@ export default function TramaTV() {
           </motion.button>
         </div>
       </div>
-
-      {/* FULLSCREEN TV MODAL (solo da bottone) */}
-      <AnimatePresence>
-        {open && (
-          <>
-            <motion.button
-              {...overlayAnim}
-              className="fixed inset-0 z-[90] bg-black/80"
-              onClick={() => setOpen(false)}
-              aria-label="Chiudi"
-              type="button"
-            />
-            <motion.div
-              {...modalAnim}
-              className="fixed inset-0 z-[91] flex items-center justify-center px-4 py-10"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="w-full max-w-6xl">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--color-text-muted)]">
-                      Visione
-                    </p>
-                    <p className="mt-0.5 font-semibold truncate">{act.label}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    className="h-10 w-10 rounded-2xl border border-[var(--color-border)] bg-black/25 hover:bg-white/5 transition inline-flex items-center justify-center"
-                    aria-label="Chiudi"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <TV act={act} switching={false} modal brandLogo={logo} />
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </section>
+  );
+}
+
+/* =========================
+   ZOOM SCREEN (solo video, controlli ON)
+========================= */
+function ZoomScreen({ act }) {
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    // prova autoplay (può fallire su alcuni browser se non c'è gesto utente)
+    v.play().catch(() => {});
+  }, [act?.src]);
+
+  return (
+    <video
+      ref={videoRef}
+      className="absolute inset-0 w-full h-full object-cover bg-black"
+      src={act.src}
+      poster={act.poster}
+      controls
+      autoPlay
+      muted={false}
+      playsInline
+      preload="metadata"
+    />
   );
 }
 
 /* =========================
    TV COMPONENT
    - Click sullo schermo = play/pause (audio ON)
-   - Modale solo da bottone
 ========================= */
-function TV({ act, switching, modal = false, onRequestFullscreen, brandLogo }) {
+function TV({ act, switching, onRequestFullscreen, brandLogo }) {
   const reduce = useReducedMotion();
   const videoRef = useRef(null);
 
@@ -248,13 +282,10 @@ function TV({ act, switching, modal = false, onRequestFullscreen, brandLogo }) {
     if (!v) return;
 
     try {
-      if (v.paused) {
-        await v.play(); // ✅ gesto utente -> audio ok
-      } else {
-        v.pause();
-      }
+      if (v.paused) await v.play(); // gesto utente -> audio ok
+      else v.pause();
     } catch {
-      // autoplay policy / error: ignora
+      // ignora
     }
   };
 
@@ -296,22 +327,18 @@ function TV({ act, switching, modal = false, onRequestFullscreen, brandLogo }) {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* SOLO QUI apri la modale */}
-              {!modal && (
-                <button
-                  type="button"
-                  onClick={() => act.unlocked && onRequestFullscreen?.()}
-                  disabled={!act.unlocked}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/25 hover:bg-white/5 transition text-xs font-semibold disabled:opacity-40"
-                  aria-label="Clicca per ingrandire"
-                  title="Clicca per ingrandire"
-                >
-                  <Expand className="w-4 h-4" />
-                  Clicca per ingrandire
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => act.unlocked && onRequestFullscreen?.()}
+                disabled={!act.unlocked}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/25 hover:bg-white/5 transition text-xs font-semibold disabled:opacity-40"
+                aria-label="Clicca per ingrandire"
+                title="Clicca per ingrandire"
+              >
+                <Expand className="w-4 h-4" />
+                Clicca per ingrandire
+              </button>
 
-              {/* little “audio” hint */}
               <div className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-white/10 bg-black/20 text-[11px] text-[var(--color-text-muted)]">
                 <Volume2 className="w-4 h-4" />
                 Audio ON
@@ -356,9 +383,9 @@ function TV({ act, switching, modal = false, onRequestFullscreen, brandLogo }) {
                 ].join(" ")}
                 src={act.src}
                 poster={act.poster}
-                controls={modal} // controlli solo in modale
-                autoPlay={modal}
-                muted={false} // ✅ AUDIO ON
+                controls={false}
+                autoPlay={false}
+                muted={false}
                 playsInline
                 preload="metadata"
               />
@@ -380,10 +407,9 @@ function TV({ act, switching, modal = false, onRequestFullscreen, brandLogo }) {
           </button>
         </div>
 
-        {/* LOWER PANEL: speaker + knobs */}
+        {/* LOWER PANEL */}
         <div className="relative px-6 md:px-8 pb-6 md:pb-7 pt-5">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-            {/* speaker grille */}
             <div className="md:col-span-8">
               <div className="h-14 md:h-16 rounded-3xl border border-white/10 bg-black/25 overflow-hidden relative">
                 <div className="absolute inset-0 opacity-70 bg-[radial-gradient(circle,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:10px_10px]" />
@@ -395,7 +421,6 @@ function TV({ act, switching, modal = false, onRequestFullscreen, brandLogo }) {
               </div>
             </div>
 
-            {/* controls */}
             <div className="md:col-span-4 flex items-center justify-between md:justify-end gap-3">
               <div className="flex items-center gap-3">
                 <div className="h-14 md:h-16 w-14 md:w-16 rounded-3xl border border-white/10 bg-black/25 grid place-items-center relative">
