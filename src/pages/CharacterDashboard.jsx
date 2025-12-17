@@ -108,6 +108,10 @@ export default function CharacterDashboard() {
     return { totalApproved, totalPending, totalRejected };
   }, [characters]);
 
+  // ✅ SOLO FRONTEND: limite BG = profiles.pg_num (default 1)
+  const pgMax = Math.max(1, Number(profile?.pg_num ?? 1));
+  const canCreateNewBg = characters.length < pgMax;
+
   useEffect(() => {
     const loadCharacters = async () => {
       if (!profile) return;
@@ -565,15 +569,29 @@ export default function CharacterDashboard() {
                 )}
               </div>
 
+              {/* ✅ UNICA MODIFICA: blocco creazione BG se slot finiti */}
               <button
                 type="button"
+                disabled={!canCreateNewBg}
                 onClick={async () => {
+                  if (!canCreateNewBg) {
+                    await alertWarning(
+                      "Slot esauriti",
+                      `Hai già ${characters.length}/${pgMax} background. Non hai altri slot PG disponibili.`
+                    );
+                    return;
+                  }
+
                   await writeLog("BG_GOTO_NEW_FORM", "Vai al form nuovo BG", {
                     user_id: profile.id,
                   });
                   navigate("/background");
                 }}
-                className="w-full mt-1 px-3 py-2.5 rounded-2xl text-xs md:text-sm font-semibold bg-[var(--violet)] text-white shadow-md hover:brightness-110 active:scale-95 transition"
+                className={`w-full mt-1 px-3 py-2.5 rounded-2xl text-xs md:text-sm font-semibold shadow-md active:scale-95 transition ${
+                  canCreateNewBg
+                    ? "bg-[var(--violet)] text-white hover:brightness-110"
+                    : "bg-black/20 text-[var(--color-text-muted)] border border-[var(--color-border)] cursor-not-allowed opacity-70"
+                }`}
               >
                 + Nuovo background
               </button>

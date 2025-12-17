@@ -118,7 +118,7 @@ export default function TramaTV() {
           </h1>
           <p className="mt-2 text-sm md:text-base text-[var(--color-text-muted)] max-w-2xl">
             Frecce per cambiare canale. Click sullo schermo = play/pausa (audio
-            incluso). Per ingrandire usa il bottone.
+            incluso).
           </p>
         </header>
 

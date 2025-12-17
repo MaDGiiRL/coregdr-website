@@ -16,6 +16,8 @@ import {
   Briefcase,
   Search,
   Plug,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 import BackgroundQueue from "./BackgroundQueue";
@@ -61,6 +63,9 @@ const BADGE = {
 
   // job
   job: "bg-cyan-400/10 text-cyan-200 border-cyan-400/25 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]",
+
+  // ✅ pg badge
+  pg: "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]",
 
   // logs type
   log_generic:
@@ -201,10 +206,10 @@ export default function AdminDashboard() {
         message,
         meta: {
           ...safeMeta(meta),
-          user_id: profile?.id, // ID dell'utente
-          discord_id: profile?.discord_id, // ID Discord
-          provider: "discord", // Provider (se necessario)
-          author: profile?.discord_username, // Nome dell'autore
+          user_id: profile?.id,
+          discord_id: profile?.discord_id,
+          provider: "discord",
+          author: profile?.discord_username,
         },
         created_at: new Date().toISOString(),
       });
@@ -250,7 +255,7 @@ export default function AdminDashboard() {
     if (!isAdmin && activeTab !== "backgrounds") setActiveTab("backgrounds");
   }, [isAdmin, activeTab]);
 
-  const accessEnabled = isAdmin; // oppure isAdmin && activeTab === "users"
+  const accessEnabled = isAdmin;
 
   const {
     accessMap,
@@ -261,7 +266,6 @@ export default function AdminDashboard() {
   const fetchData = async () => {
     if (!profile) return;
 
-    // whitelister vede solo backgrounds
     if (!isAdmin) {
       setLoadingData(false);
       return;
@@ -302,7 +306,7 @@ export default function AdminDashboard() {
         rejectedBackgrounds: rejectedBgRes.count ?? 0,
       });
 
-      // ✅ users base
+      // ✅ users base (+ pg_num)
       const { data: usersData, error: usersError } = await supabase
         .from("profiles")
         .select(
@@ -312,7 +316,8 @@ export default function AdminDashboard() {
           discord_username,
           created_at,
           is_moderator,
-          is_admin
+          is_admin,
+          pg_num
         `
         )
         .order("created_at", { ascending: false });
@@ -323,7 +328,7 @@ export default function AdminDashboard() {
       } else {
         const { data: charsData, error: charsErr } = await supabase
           .from("characters")
-          .select("user_id, status, created_at, job")
+          .select("id, user_id, status, created_at, job")
           .order("created_at", { ascending: false });
 
         if (charsErr) console.error(charsErr);
@@ -331,7 +336,15 @@ export default function AdminDashboard() {
         const latestBgByUser = new Map();
         const latestJobByUser = new Map();
 
+        // ✅ conta PG per user (tutti i characters)
+        const pgCountByUser = new Map();
+
         (charsData || []).forEach((ch) => {
+          pgCountByUser.set(
+            ch.user_id,
+            (pgCountByUser.get(ch.user_id) ?? 0) + 1
+          );
+
           if (!latestBgByUser.has(ch.user_id))
             latestBgByUser.set(ch.user_id, ch.status);
           if (!latestJobByUser.has(ch.user_id))
@@ -347,20 +360,21 @@ export default function AdminDashboard() {
 
             stList.forEach((userMap) => {
               for (const [, data] of userMap) {
-                // Calcolo del più recente lastServerJoinAt
                 if (data.lastServerJoinAt) {
                   const date = new Date(data.lastServerJoinAt);
                   if (!lastServerJoinAt || date > lastServerJoinAt) {
                     lastServerJoinAt = date;
                   }
                 }
-                // Somma degli hoursPlayed
                 hoursPlayed += Number(data.hoursPlayed ?? 0);
               }
             });
 
             const bgStatus = latestBgByUser.get(u.id) ?? "none";
             const job = latestJobByUser.get(u.id) ?? "";
+
+            const pgMax = Math.max(1, Number(u.pg_num ?? 1));
+            const pgCount = pgCountByUser.get(u.id) ?? 0;
 
             return {
               id: u.id,
@@ -374,6 +388,10 @@ export default function AdminDashboard() {
               isAdmin: !!u.is_admin,
               lastServerJoinAt,
               hoursPlayed,
+
+              // ✅ nuovi campi (solo UI)
+              pgMax,
+              pgCount,
             };
           })
         );
@@ -381,7 +399,7 @@ export default function AdminDashboard() {
 
       const { data: logsData, error: logsError } = await supabase
         .from("logs")
-        .select("id, type, message, created_at")
+        .select("id, type, message, created_at, meta")
         .order("created_at", { ascending: false });
 
       if (logsError) {
@@ -394,6 +412,7 @@ export default function AdminDashboard() {
             type: l.type ?? "GENERIC",
             message: l.message ?? "",
             createdAt: l.created_at,
+            meta: l.meta ?? null,
           }))
         );
       }
@@ -433,8 +452,6 @@ export default function AdminDashboard() {
     setUserCharsLoading(true);
 
     try {
-      // JOIN: characters -> profiles (per filtrare via discord_id)
-      // Se hai already discord_id su characters, puoi semplificare con .eq("discord_id", u.discord_id)
       const { data, error } = await supabase
         .from("characters")
         .select(
@@ -455,7 +472,6 @@ export default function AdminDashboard() {
 
       if (error) throw error;
 
-      // Mappa accessMap per questo discord id: endpoint -> { lastServerJoinAt, hoursPlayed }
       const stList = accessMap.get(u.discord_id) ?? [];
       let lastServerJoinAt = null;
       let hoursPlayed = 0;
@@ -470,18 +486,29 @@ export default function AdminDashboard() {
         }
       });
 
-      setUserCharacters(
-        (data || []).map((ch) => ({
-          id: ch.id,
-          createdAt: ch.created_at,
-          status: ch.status ?? "none",
-          job: (ch.job ?? "").trim(),
-          name:
-            [ch.firstname, ch.lastname].filter(Boolean).join(" ").trim() ||
-            `PG #${ch.id}`,
-          lastServerJoinAt,
-          hoursPlayed,
-        }))
+      const mapped = (data || []).map((ch) => ({
+        id: ch.id,
+        createdAt: ch.created_at,
+        status: ch.status ?? "none",
+        job: (ch.job ?? "").trim(),
+        name:
+          [ch.firstname, ch.lastname].filter(Boolean).join(" ").trim() ||
+          `PG #${ch.id}`,
+        lastServerJoinAt,
+        hoursPlayed,
+
+        // ✅ flag per distinguere eventuali PG aggiunti lato UI
+        __local: false,
+      }));
+
+      setUserCharacters(mapped);
+
+      // ✅ sincronizza pgCount UI col numero reale caricato (solo UI)
+      setUsers((prev) =>
+        prev.map((x) => (x.id === u.id ? { ...x, pgCount: mapped.length } : x))
+      );
+      setSelectedUser((prev) =>
+        prev ? { ...prev, pgCount: mapped.length } : prev
       );
     } catch (e) {
       console.error(e);
@@ -496,6 +523,84 @@ export default function AdminDashboard() {
     setSelectedUser(null);
     setUserCharacters([]);
     setUserCharsError("");
+  };
+
+  // ✅ SOLO FRONTEND: admin add/remove PG (non tocca il backend)
+  const canAdminEditPG = isAdmin && !!selectedUser;
+
+  const addLocalCharacter = async () => {
+    if (!selectedUser) return;
+
+    const max = Math.max(1, Number(selectedUser.pgMax ?? 1));
+    const count = Number(selectedUser.pgCount ?? userCharacters.length ?? 0);
+
+    if (count >= max) {
+      await alertError(
+        "Limite raggiunto",
+        `Questo utente ha già ${count}/${max} PG.`
+      );
+      return;
+    }
+
+    const newCh = {
+      id: `local_${
+        crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2)
+      }`,
+      createdAt: new Date().toISOString(),
+      status: "none",
+      job: "",
+      name: `PG #${count + 1}`,
+      lastServerJoinAt: userCharacters?.[0]?.lastServerJoinAt ?? null,
+      hoursPlayed: userCharacters?.[0]?.hoursPlayed ?? 0,
+      __local: true,
+    };
+
+    setUserCharacters((prev) => [newCh, ...prev]);
+
+    const nextCount = count + 1;
+    setUsers((prev) =>
+      prev.map((x) =>
+        x.id === selectedUser.id ? { ...x, pgCount: nextCount } : x
+      )
+    );
+    setSelectedUser((prev) => (prev ? { ...prev, pgCount: nextCount } : prev));
+
+    await writeLog(
+      "DASH_PG_ADD_UI",
+      `Aggiunto PG (solo UI) a ${selectedUser.discordName}`,
+      {
+        target_user_id: selectedUser.id,
+        target_discord_id: selectedUser.discord_id,
+      }
+    );
+  };
+
+  const removeLocalCharacter = async (chId) => {
+    if (!selectedUser) return;
+
+    const before = userCharacters.length;
+    const nextList = userCharacters.filter((c) => c.id !== chId);
+    if (nextList.length === before) return;
+
+    setUserCharacters(nextList);
+
+    const nextCount = nextList.length;
+    setUsers((prev) =>
+      prev.map((x) =>
+        x.id === selectedUser.id ? { ...x, pgCount: nextCount } : x
+      )
+    );
+    setSelectedUser((prev) => (prev ? { ...prev, pgCount: nextCount } : prev));
+
+    await writeLog(
+      "DASH_PG_REMOVE_UI",
+      `Rimosso PG (solo UI) da ${selectedUser.discordName}`,
+      {
+        target_user_id: selectedUser.id,
+        target_discord_id: selectedUser.discord_id,
+        character_id: chId,
+      }
+    );
   };
 
   useEffect(() => {
@@ -517,7 +622,7 @@ export default function AdminDashboard() {
       try {
         const { data, error } = await supabase
           .from("logs")
-          .select("id, type, message, created_at")
+          .select("id, type, message, created_at, meta")
           .order("created_at", { ascending: false })
           .limit(1000);
 
@@ -529,6 +634,7 @@ export default function AdminDashboard() {
               type: l.type ?? "GENERIC",
               message: l.message ?? "",
               createdAt: l.created_at,
+              meta: l.meta ?? null,
             }))
           );
         }
@@ -572,7 +678,13 @@ export default function AdminDashboard() {
     const q = userSearch.trim().toLowerCase();
     if (q) {
       base = base.filter((u) => {
-        const hay = [u.discordName, u.id, u.job, u.bgStatus]
+        const hay = [
+          u.discordName,
+          u.id,
+          u.job,
+          u.bgStatus,
+          `${u.pgCount}/${u.pgMax}`,
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -589,7 +701,6 @@ export default function AdminDashboard() {
     return base;
   }, [users, userSearch, jobFilter, roleFilter, bgFilter]);
 
-  
   // ✅ LOGS: opzioni + filtro
   const logTypeOptions = useMemo(() => {
     const set = new Set(
@@ -968,51 +1079,58 @@ export default function AdminDashboard() {
                           key={u.id}
                           className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-xs md:text-sm font-semibold truncate">
-                                {u.discordName}
-                              </p>
-                              <p className="text-[10px] text-[var(--color-text-muted)]">
-                                Iscritto il{" "}
-                                {new Date(u.joinedAt).toLocaleString("it-IT", {
-                                  dateStyle: "short",
-                                  timeStyle: "short",
-                                })}
-                              </p>
+                          <div className="min-w-0">
+                            <p className="text-xs md:text-sm font-semibold truncate">
+                              {u.discordName}
+                            </p>
+                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                              Iscritto il{" "}
+                              {new Date(u.joinedAt).toLocaleString("it-IT", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })}
+                            </p>
 
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <Badge
-                                  variant={roleVariant(currentRole)}
-                                  icon={
-                                    currentRole === "Admin"
-                                      ? Crown
-                                      : currentRole === "Whitelister"
-                                      ? BadgeCheck
-                                      : UserCog
-                                  }
-                                >
-                                  {currentRole}
-                                </Badge>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Badge
+                                variant={roleVariant(currentRole)}
+                                icon={
+                                  currentRole === "Admin"
+                                    ? Crown
+                                    : currentRole === "Whitelister"
+                                    ? BadgeCheck
+                                    : UserCog
+                                }
+                              >
+                                {currentRole}
+                              </Badge>
 
-                                <Badge
-                                  variant={bgVariant(u.bgStatus)}
-                                  icon={FileText}
-                                  title="Stato background"
-                                >
-                                  {u.bgStatus === "none"
-                                    ? "BG: —"
-                                    : `BG: ${u.bgStatus}`}
-                                </Badge>
+                              <Badge
+                                variant={bgVariant(u.bgStatus)}
+                                icon={FileText}
+                                title="Stato background"
+                              >
+                                {u.bgStatus === "none"
+                                  ? "BG: —"
+                                  : `BG: ${u.bgStatus}`}
+                              </Badge>
 
-                                <Badge
-                                  variant="job"
-                                  icon={Briefcase}
-                                  title="Job (dal background)"
-                                >
-                                  {u.job ? `Job: ${u.job}` : "Job: —"}
-                                </Badge>
-                              </div>
+                              <Badge
+                                variant="job"
+                                icon={Briefcase}
+                                title="Job (dal background)"
+                              >
+                                {u.job ? `Job: ${u.job}` : "Job: —"}
+                              </Badge>
+
+                              {/* ✅ PG badge */}
+                              <Badge
+                                variant="pg"
+                                icon={UsersIcon}
+                                title="Personaggi / slot (pg_num)"
+                              >
+                                PG: {u.pgCount ?? 0} / {u.pgMax ?? 1}
+                              </Badge>
                             </div>
                           </div>
                         </div>
@@ -1093,7 +1211,6 @@ export default function AdminDashboard() {
                           {l.message}
                         </p>
 
-                        {/* Mostra il nome dell'autore */}
                         {l.meta?.author && (
                           <div className="mt-2 text-xs text-[var(--color-text-muted)]">
                             <span>Autore: </span>
@@ -1103,7 +1220,6 @@ export default function AdminDashboard() {
                           </div>
                         )}
 
-                        {/* Mostra il Discord ID dell'autore */}
                         {l.meta?.discord_id && (
                           <div className="mt-2 text-xs text-[var(--color-text-muted)]">
                             <span>Discord ID: </span>
@@ -1169,7 +1285,6 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* search */}
                   <div className="relative">
                     <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
@@ -1180,7 +1295,6 @@ export default function AdminDashboard() {
                     />
                   </div>
 
-                  {/* job filter */}
                   <div className="relative">
                     <Briefcase className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
                     <select
@@ -1196,7 +1310,6 @@ export default function AdminDashboard() {
                     </select>
                   </div>
 
-                  {/* role filter */}
                   <div className="relative">
                     <UserCog className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
                     <select
@@ -1211,7 +1324,6 @@ export default function AdminDashboard() {
                     </select>
                   </div>
 
-                  {/* bg status filter */}
                   <div className="relative">
                     <FileText className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
                     <select
@@ -1248,16 +1360,15 @@ export default function AdminDashboard() {
                       onClick={() => openUserModal(u)}
                       whileTap={{ scale: reduce ? 1 : 0.99 }}
                       className="
-    w-full text-left
-    rounded-2xl border border-[var(--color-border)]
-    bg-black/20 px-4 py-3
-    hover:bg-white/5 transition
-    focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)]
-  "
+                        w-full text-left
+                        rounded-2xl border border-[var(--color-border)]
+                        bg-black/20 px-4 py-3
+                        hover:bg-white/5 transition
+                        focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)]
+                      "
                     >
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div className="min-w-0">
-                          {/* nome ora NON è più button */}
                           <p className="font-semibold truncate">
                             {u.discordName}
                           </p>
@@ -1294,7 +1405,6 @@ export default function AdminDashboard() {
                             })}
                           </p>
 
-                          {/* ✅ SOLO badge ruolo */}
                           <div className="mt-2 flex flex-wrap gap-2">
                             <Badge
                               variant={roleVariant(currentRole)}
@@ -1307,6 +1417,15 @@ export default function AdminDashboard() {
                               }
                             >
                               {currentRole}
+                            </Badge>
+
+                            {/* ✅ PG badge nella lista utenti */}
+                            <Badge
+                              variant="pg"
+                              icon={UsersIcon}
+                              title="Personaggi / slot (pg_num)"
+                            >
+                              PG: {u.pgCount ?? 0} / {u.pgMax ?? 1}
                             </Badge>
                           </div>
                         </div>
@@ -1376,7 +1495,6 @@ export default function AdminDashboard() {
                 </span>
               </div>
 
-              {/* filtri logs */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1426,7 +1544,6 @@ export default function AdminDashboard() {
                       {l.message}
                     </p>
 
-                    {/* Aggiungi qui il nome dell'autore */}
                     {l.meta?.author && (
                       <div className="mt-2 text-xs text-[var(--color-text-muted)]">
                         <span>Autore: </span>
@@ -1493,7 +1610,6 @@ export default function AdminDashboard() {
                 </span>
               </div>
 
-              {/* filtri server logs */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1605,6 +1721,7 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
+      {/* MODAL PG */}
       <AnimatePresence>
         {userModalOpen && (
           <motion.div
@@ -1613,7 +1730,6 @@ export default function AdminDashboard() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            {/* overlay */}
             <button
               type="button"
               aria-label="Chiudi"
@@ -1621,7 +1737,6 @@ export default function AdminDashboard() {
               className="absolute inset-0 bg-black/70"
             />
 
-            {/* modal */}
             <motion.div
               initial={{
                 opacity: 0,
@@ -1652,15 +1767,48 @@ export default function AdminDashboard() {
                         {selectedUser?.discord_id}
                       </span>
                     </p>
+
+                    {/* ✅ PG x/y */}
+                    {selectedUser && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge
+                          variant="pg"
+                          icon={UsersIcon}
+                          title="Personaggi / slot (pg_num)"
+                        >
+                          PG: {userCharacters.length} /{" "}
+                          {selectedUser.pgMax ?? 1}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={closeUserModal}
-                    className="px-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 hover:bg-white/5 text-xs font-semibold"
-                  >
-                    Chiudi
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {/* ✅ Admin add (SOLO UI) */}
+                    {canAdminEditPG && (
+                      <motion.button
+                        type="button"
+                        whileTap={{ scale: reduce ? 1 : 0.97 }}
+                        onClick={addLocalCharacter}
+                        disabled={
+                          userCharacters.length >= (selectedUser.pgMax ?? 1)
+                        }
+                        className="px-3 py-2 rounded-2xl bg-[var(--violet)] text-white text-xs font-semibold shadow-md hover:brightness-110 inline-flex items-center gap-2 disabled:opacity-40"
+                        title="Aggiungi PG (solo frontend)"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Aggiungi PG
+                      </motion.button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={closeUserModal}
+                      className="px-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 hover:bg-white/5 text-xs font-semibold"
+                    >
+                      Chiudi
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1692,6 +1840,11 @@ export default function AdminDashboard() {
                                 dateStyle: "short",
                                 timeStyle: "short",
                               })}
+                              {ch.__local ? (
+                                <span className="ml-2 opacity-70">
+                                  (solo UI)
+                                </span>
+                              ) : null}
                             </p>
 
                             <div className="mt-2 flex flex-wrap gap-2">
@@ -1710,26 +1863,42 @@ export default function AdminDashboard() {
                             </div>
                           </div>
 
-                          <div className="text-[11px] text-[var(--color-text-muted)] space-y-1 md:text-right">
-                            <div>
-                              Ultimo accesso:{" "}
-                              <span className="text-white/80">
-                                {ch.lastServerJoinAt
-                                  ? new Date(
-                                      ch.lastServerJoinAt
-                                    ).toLocaleString("it-IT", {
-                                      dateStyle: "short",
-                                      timeStyle: "short",
-                                    })
-                                  : "—"}
-                              </span>
+                          <div className="flex items-center gap-2">
+                            <div className="text-[11px] text-[var(--color-text-muted)] space-y-1 md:text-right">
+                              <div>
+                                Ultimo accesso:{" "}
+                                <span className="text-white/80">
+                                  {ch.lastServerJoinAt
+                                    ? new Date(
+                                        ch.lastServerJoinAt
+                                      ).toLocaleString("it-IT", {
+                                        dateStyle: "short",
+                                        timeStyle: "short",
+                                      })
+                                    : "—"}
+                                </span>
+                              </div>
+                              <div>
+                                Ore in gioco:{" "}
+                                <span className="text-white/80 font-semibold">
+                                  {Number(ch.hoursPlayed || 0).toFixed(1)}
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              Ore in gioco:{" "}
-                              <span className="text-white/80 font-semibold">
-                                {Number(ch.hoursPlayed || 0).toFixed(1)}
-                              </span>
-                            </div>
+
+                            {/* ✅ Admin remove (SOLO UI) */}
+                            {canAdminEditPG && (
+                              <motion.button
+                                type="button"
+                                whileTap={{ scale: reduce ? 1 : 0.97 }}
+                                onClick={() => removeLocalCharacter(ch.id)}
+                                className="ml-2 px-3 py-2 rounded-2xl border border-rose-400/30 bg-rose-400/10 hover:bg-rose-400/15 text-rose-200 text-xs font-semibold inline-flex items-center gap-2"
+                                title="Rimuovi PG (solo frontend)"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Rimuovi
+                              </motion.button>
+                            )}
                           </div>
                         </div>
                       </div>
