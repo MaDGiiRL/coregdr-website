@@ -18,11 +18,11 @@ import {
   Bell,
 } from "lucide-react";
 
-import logo from "../assets/img/logo.png";
-import { useAuth } from "../context/AuthContext";
-import { signInWithDiscord, signOut } from "../lib/auth";
-import { alertError, confirmAction, toast } from "../lib/alerts";
-import { supabase } from "../lib/supabaseClient";
+import logo from "../../assets/img/logo.png";
+import { useAuth } from "../../context/AuthContext";
+import { signInWithDiscord, signOut } from "../../lib/auth";
+import { alertError, confirmAction, toast } from "../../lib/alerts";
+import { supabase } from "../../lib/supabaseClient";
 
 /* ------------------ LINK STYLES ------------------ */
 const linkBase =

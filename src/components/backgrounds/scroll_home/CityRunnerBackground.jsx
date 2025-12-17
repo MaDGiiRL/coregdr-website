@@ -3,7 +3,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 
-import FpsOverlay from "../../FpsOverlay"; // ✅ aggiusta il path se diverso
+import FpsOverlay from "../../connect/FpsOverlay"; // ✅ aggiusta il path se diverso
 import { createGtaTexturePack } from "./gtaTextures";
 
 const PALETTE = {

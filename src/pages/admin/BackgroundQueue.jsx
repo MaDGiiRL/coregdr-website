@@ -1,22 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import {
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
-  Pencil,
-  Save,
-  Ban,
-  Lock,
-  Info,
-  Search,
-  Briefcase,
-  MessageSquarePlus,
-  Trash2,
-  UsersRound,
-  X as CloseIcon,
-  ExternalLink,
-} from "lucide-react";
+import { useReducedMotion } from "framer-motion";
 
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
@@ -28,54 +11,21 @@ import {
   toast,
 } from "../../lib/alerts";
 
-const STATUS_LABELS = {
-  pending: "In attesa",
-  approved: "Approvato",
-  rejected: "Rifiutato",
-};
+// components UI
+import BackgroundQueueHeader from "../../components/admin/background-queue/BackgroundQueueHeader";
+import BackgroundQueueFilters from "../../components/admin/background-queue/BackgroundQueueFilters";
+import UsersTab from "../../components/admin/background-queue/UsersTab";
+import BackgroundsTab from "../../components/admin/background-queue/BackgroundsTab";
+import BackgroundsList from "../../components/admin/background-queue/BackgroundsList";
+import BackgroundDetail from "../../components/admin/background-queue/BackgroundDetail";
+import RejectModal from "../../components/admin/background-queue/RejectModal";
+import UserModal from "../../components/admin/background-queue/UserModal";
 
-const STATUS_COLORS = {
-  pending: "bg-yellow-400/20 text-yellow-300 border-yellow-400/40",
-  approved: "bg-emerald-400/15 text-emerald-300 border-emerald-400/40",
-  rejected: "bg-red-400/15 text-red-300 border-red-400/40",
-};
-
-const statusPill = (status) =>
-  STATUS_COLORS[status] ??
-  "bg-black/20 text-[var(--color-text-muted)] border-[var(--color-border)]";
-
-// Badge ruolo autore commento
-const rolePill = (role) => {
-  switch (role) {
-    case "Admin":
-      return "bg-gradient-to-r from-[var(--violet)]/25 to-fuchsia-400/10 text-white border-[var(--violet-soft)]";
-    case "Whitelister":
-      return "bg-gradient-to-r from-amber-400/20 to-amber-400/5 text-amber-200 border-amber-400/40";
-    default:
-      return "bg-white/5 text-[var(--color-text-muted)] border-[var(--color-border)]";
-  }
-};
-
-const RoleBadge = ({ role }) => (
-  <span
-    className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[10px] ${rolePill(
-      role
-    )}`}
-  >
-    <span className="font-semibold">{role}</span>
-  </span>
-);
-
-// Normalizzazione Job (debug filtro)
-const normalizeJob = (job) => (job || "").toString().trim().toLowerCase();
-
-const safeMeta = (obj) => {
-  try {
-    return obj && typeof obj === "object" ? obj : {};
-  } catch {
-    return {};
-  }
-};
+// utils
+import {
+  normalizeJob,
+  safeMeta,
+} from "../../components/admin/background-queue/utils";
 
 export default function BackgroundQueue() {
   const { profile, loading } = useAuth();
@@ -91,10 +41,10 @@ export default function BackgroundQueue() {
 
   const [view, setView] = useState("backgrounds"); // "backgrounds" | "users"
   const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("all"); // all | pending | approved | rejected
   const [selectedId, setSelectedId] = useState(null);
 
-  // admin filters
+  // shared filters (valgono su entrambi i tab)
   const [q, setQ] = useState("");
   const [jobFilter, setJobFilter] = useState("ALL");
 
@@ -129,7 +79,7 @@ export default function BackgroundQueue() {
   const [modalUser, setModalUser] = useState(null);
   const [modalUserBackgrounds, setModalUserBackgrounds] = useState([]);
 
-  // ✅ reject modal
+  // reject modal
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReasonDraft, setRejectReasonDraft] = useState("");
   const [rejectSending, setRejectSending] = useState(false);
@@ -140,7 +90,7 @@ export default function BackgroundQueue() {
   const softPanel =
     "rounded-2xl border border-[var(--color-border)] bg-black/20";
 
-  // ✅ LOG WRITER (solo logica)
+  // LOG WRITER
   const writeLog = async (type, message, meta = {}) => {
     try {
       await supabase.from("logs").insert({
@@ -150,7 +100,6 @@ export default function BackgroundQueue() {
         created_at: new Date().toISOString(),
       });
     } catch (e) {
-      // non bloccare la UI se i log falliscono
       console.debug("[LOGS] writeLog failed:", e?.message || e);
     }
   };
@@ -282,13 +231,18 @@ export default function BackgroundQueue() {
   const selected = items.find((i) => i.id === selectedId) ?? null;
   const isLocked = selected?.status === "approved";
 
+  // sync jobDraft
+  useEffect(() => {
+    setJobDraft(selected?.job ?? "");
+  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // realtime + load comments
   useEffect(() => {
     if (!selected?.id) return;
 
     let alive = true;
 
-    // Caricamento iniziale dei commenti
-    const loadComments = async () => {
+    const loadCommentsRT = async () => {
       setCommentsLoading(true);
       try {
         const { data, error } = await supabase
@@ -338,9 +292,8 @@ export default function BackgroundQueue() {
       }
     };
 
-    loadComments();
+    loadCommentsRT();
 
-    // Sottoscrizione ai cambiamenti in tempo reale
     const commentChannel = supabase
       .channel("realtime-comments")
       .on(
@@ -381,7 +334,7 @@ export default function BackgroundQueue() {
 
     return () => {
       alive = false;
-      supabase.removeChannel(commentChannel); // Unsubscribe from the channel when the component is unmounted
+      supabase.removeChannel(commentChannel);
     };
   }, [selected?.id]);
 
@@ -390,6 +343,7 @@ export default function BackgroundQueue() {
     setEditMode(false);
   };
 
+  // job options
   const jobOptions = useMemo(() => {
     const map = new Map(); // norm -> display
     items.forEach((x) => {
@@ -406,6 +360,7 @@ export default function BackgroundQueue() {
     return [{ norm: "ALL", display: "Tutti i job" }, ...list];
   }, [items]);
 
+  // BACKGROUNDS filtered (filtri su BG)
   const filtered = useMemo(() => {
     const byStatus = items.filter((item) =>
       filter === "all" ? true : item.status === filter
@@ -438,7 +393,7 @@ export default function BackgroundQueue() {
     return byJob;
   }, [items, filter, isAdmin, q, jobFilter]);
 
-  // ---------------- COMMENTS ----------------
+  // COMMENTS load (non realtime)
   const loadComments = async (characterId) => {
     if (!characterId) return;
     setCommentsLoading(true);
@@ -491,7 +446,7 @@ export default function BackgroundQueue() {
   };
 
   const sortedComments = useMemo(() => {
-    return comments.sort(
+    return [...comments].sort(
       (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
     );
   }, [comments]);
@@ -548,7 +503,6 @@ export default function BackgroundQueue() {
         },
       ]);
 
-      // ✅ LOG
       await writeLog(
         "BG_COMMENT",
         `Commento staff su BG ${selected.id} (${selected.nome} ${selected.cognome})`,
@@ -568,7 +522,7 @@ export default function BackgroundQueue() {
     }
   };
 
-  // ---------------- UPDATE STATUS ----------------
+  // UPDATE STATUS
   const updateStatus = async (id, status, rejectionReason = "") => {
     if (!canChangeStatus) return;
 
@@ -619,18 +573,13 @@ export default function BackgroundQueue() {
         )
       );
 
-      // ✅ LOG
       if (status === "approved") {
         await writeLog(
           "BG_APPROVE",
           `BG approvato: ${current?.nome ?? ""} ${
             current?.cognome ?? ""
           }`.trim(),
-          {
-            character_id: id,
-            user_id: current?.userId,
-            staff_id: profile.id,
-          }
+          { character_id: id, user_id: current?.userId, staff_id: profile.id }
         );
       }
 
@@ -655,17 +604,17 @@ export default function BackgroundQueue() {
           `BG riportato in pending: ${current?.nome ?? ""} ${
             current?.cognome ?? ""
           }`.trim(),
-          {
-            character_id: id,
-            user_id: current?.userId,
-            staff_id: profile.id,
-          }
+          { character_id: id, user_id: current?.userId, staff_id: profile.id }
         );
       }
 
       toast(
         "success",
-        status === "approved" ? "Background approvato" : "Background rifiutato"
+        status === "approved"
+          ? "Background approvato"
+          : status === "rejected"
+          ? "Background rifiutato"
+          : "Background aggiornato"
       );
     } finally {
       setUpdating(false);
@@ -695,7 +644,6 @@ export default function BackgroundQueue() {
     await updateStatus(selected.id, "approved");
   };
 
-  // ✅ open reject modal
   const openRejectModal = async () => {
     if (!selected) return;
 
@@ -740,10 +688,8 @@ export default function BackgroundQueue() {
 
     setRejectSending(true);
     try {
-      // 1) status + rejection_reason (log già dentro updateStatus)
       await updateStatus(selected.id, "rejected", reason);
 
-      // 2) salva anche come commento storico
       const payload = {
         character_id: selected.id,
         author_id: profile.id,
@@ -773,7 +719,6 @@ export default function BackgroundQueue() {
           },
         ]);
 
-        // ✅ LOG extra (commento rifiuto come commento)
         await writeLog(
           "BG_COMMENT",
           `Motivazione rifiuto salvata nei commenti (BG ${selected.id})`,
@@ -799,7 +744,7 @@ export default function BackgroundQueue() {
     await openRejectModal();
   };
 
-  // ---------------- EDIT BG TEXT ----------------
+  // EDIT BG TEXT
   const startEdit = async () => {
     if (!selected || !canEditBgText) return;
 
@@ -902,7 +847,6 @@ export default function BackgroundQueue() {
         )
       );
 
-      // ✅ LOG
       await writeLog(
         "BG_EDIT",
         `Testo BG modificato: ${selected.nome} ${selected.cognome}`,
@@ -920,7 +864,7 @@ export default function BackgroundQueue() {
     }
   };
 
-  // ---------------- JOB EDIT ----------------
+  // JOB EDIT
   const saveJob = async () => {
     if (!selected || !canEditJob) return;
 
@@ -957,7 +901,6 @@ export default function BackgroundQueue() {
         )
       );
 
-      // ✅ LOG
       await writeLog(
         "BG_JOB_UPDATE",
         `Job aggiornato su BG ${selected.id} (${selected.nome} ${selected.cognome})`,
@@ -980,31 +923,75 @@ export default function BackgroundQueue() {
     await saveJob();
   };
 
-  // ---------------- USERS VIEW ----------------
-  const usersInQueue = useMemo(() => {
+  // USERS BASE
+  const usersBase = useMemo(() => {
     const map = new Map();
+
     items.forEach((it) => {
-      if (!map.has(it.userId)) {
+      const prev = map.get(it.userId);
+
+      if (!prev) {
         map.set(it.userId, {
           userId: it.userId,
           discordName: it.discordName,
           discordId: it.discordId,
           job: it.job || "",
-          backgroundsCount: 0,
+          backgroundsCount: 1,
           latestStatus: it.status,
           latestCreatedAt: it.submittedAt,
         });
+        return;
       }
-      const u = map.get(it.userId);
-      u.backgroundsCount += 1;
+
+      prev.backgroundsCount += 1;
+
+      if (new Date(it.submittedAt) > new Date(prev.latestCreatedAt)) {
+        prev.latestCreatedAt = it.submittedAt;
+        prev.latestStatus = it.status;
+        if (it.job) prev.job = it.job;
+      }
+
+      if (!prev.discordName && it.discordName)
+        prev.discordName = it.discordName;
+      if (!prev.discordId && it.discordId) prev.discordId = it.discordId;
     });
 
-    const list = Array.from(map.values());
-    list.sort(
+    return Array.from(map.values()).sort(
       (a, b) => new Date(b.latestCreatedAt) - new Date(a.latestCreatedAt)
     );
-    return list;
   }, [items]);
+
+  // USERS FILTERED (filtri su UTENTE, non su background)
+  const usersFiltered = useMemo(() => {
+    let list = usersBase;
+
+    if (filter !== "all") {
+      list = list.filter((u) => u.latestStatus === filter);
+    }
+
+    const qNorm = q.trim().toLowerCase();
+    if (qNorm) {
+      list = list.filter((u) => {
+        const hay = [
+          u.discordName,
+          u.discordId,
+          u.userId,
+          u.job,
+          u.latestStatus,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(qNorm);
+      });
+    }
+
+    if (isAdmin && jobFilter !== "ALL") {
+      list = list.filter((u) => normalizeJob(u.job) === jobFilter);
+    }
+
+    return list;
+  }, [usersBase, filter, q, isAdmin, jobFilter]);
 
   const openUserModal = (u) => {
     const st = userStats.get(u.userId) || null;
@@ -1036,14 +1023,10 @@ export default function BackgroundQueue() {
     exit: { opacity: 0, y: reduce ? 0 : -6, transition: { duration: 0.15 } },
   };
 
-  const selectedUserStat = selected?.userId
-    ? userStats.get(selected.userId)
-    : null;
-
   if (loading) {
     return (
       <p className="text-sm text-[var(--color-text-muted)]">
-        Caricamento sessione...
+        Caricamento sessionToggle...
       </p>
     );
   }
@@ -1056,123 +1039,43 @@ export default function BackgroundQueue() {
     );
   }
 
+  const resetFilters = () => {
+    setQ("");
+    setJobFilter("ALL");
+    setFilter("all");
+    setEditMode(false);
+  };
+
   return (
     <section className="space-y-6">
-      <header className={`${shellCard} p-5 md:p-6 space-y-3`}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-              Staff
-            </p>
-            <h2 className="text-xl md:text-2xl font-semibold">
-              Moderazione background
-            </h2>
-          </div>
+      <BackgroundQueueHeader
+        shellCard={shellCard}
+        reduce={reduce}
+        resetFilters={resetFilters}
+        onRefresh={() => {
+          loadBackgrounds();
+          loadUserStats();
+        }}
+      />
 
-          <motion.button
-            type="button"
-            whileTap={{ scale: reduce ? 1 : 0.98 }}
-            onClick={() => {
-              loadBackgrounds();
-              loadUserStats();
-            }}
-            className="px-3 py-2 rounded-full border border-[var(--color-border)] hover:bg-white/5 inline-flex items-center gap-2 text-xs"
-            title="Aggiorna lista"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Aggiorna
-          </motion.button>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {[
-            { id: "backgrounds", label: "Background", icon: Info },
-            { id: "users", label: "Utenti", icon: UsersRound },
-          ].map((t) => {
-            const Icon = t.icon;
-            const active = view === t.id;
-            return (
-              <motion.button
-                key={t.id}
-                type="button"
-                whileTap={{ scale: reduce ? 1 : 0.985 }}
-                onClick={() => setView(t.id)}
-                className={`px-3.5 py-2 rounded-2xl border transition inline-flex items-center gap-2 text-xs md:text-sm ${
-                  active
-                    ? "bg-white/5 border-[var(--violet-soft)] text-white shadow-[0_0_0_1px_rgba(124,92,255,0.25)]"
-                    : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span className="font-semibold">{t.label}</span>
-              </motion.button>
-            );
-          })}
-          <span className="ml-auto text-[11px] text-[var(--color-text-muted)] self-center">
-            {view === "backgrounds"
-              ? `${filtered.length} background`
-              : `${usersInQueue.length} utenti`}
-            {statsLoading ? " • stats..." : ""}
-          </span>
-        </div>
-
-        {view === "backgrounds" && (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {[
-              { id: "all", label: "Tutti" },
-              { id: "pending", label: "In attesa" },
-              { id: "approved", label: "Approvati" },
-              { id: "rejected", label: "Rifiutati" },
-            ].map((f) => (
-              <motion.button
-                key={f.id}
-                type="button"
-                whileTap={{ scale: reduce ? 1 : 0.98 }}
-                onClick={() => {
-                  setFilter(f.id);
-                  setEditMode(false);
-                }}
-                className={`px-3.5 py-2 rounded-full border text-xs transition ${
-                  filter === f.id
-                    ? "bg-[var(--violet)] text-white border-[var(--violet-soft)] shadow-md"
-                    : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5"
-                }`}
-              >
-                {f.label}
-              </motion.button>
-            ))}
-          </div>
-        )}
-
-        {view === "backgrounds" && isAdmin && (
-          <div className="pt-2 flex flex-col md:flex-row gap-2">
-            <div className="flex-1 relative">
-              <Search className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Cerca (nome, cognome, discord, id, job...)"
-                className="w-full pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-sm outline-none focus:border-[var(--blue)]"
-              />
-            </div>
-
-            <div className="md:w-[260px] relative">
-              <Briefcase className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
-              <select
-                value={jobFilter}
-                onChange={(e) => setJobFilter(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-sm outline-none focus:border-[var(--blue)]"
-              >
-                {jobOptions.map((j) => (
-                  <option key={j.norm} value={j.norm}>
-                    {j.display}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-      </header>
+      <BackgroundQueueFilters
+        view={view}
+        setView={setView}
+        filteredCount={filtered.length}
+        usersFilteredCount={usersFiltered.length}
+        statsLoading={statsLoading}
+        isAdmin={isAdmin}
+        jobOptions={jobOptions}
+        shellCard={shellCard}
+        reduce={reduce}
+        q={q}
+        setQ={setQ}
+        filter={filter}
+        setFilter={setFilter}
+        jobFilter={jobFilter}
+        setJobFilter={setJobFilter}
+        setEditMode={setEditMode}
+      />
 
       {loadingData ? (
         <div
@@ -1183,704 +1086,83 @@ export default function BackgroundQueue() {
       ) : (
         <>
           {view === "users" && (
-            <div className={`${shellCard} p-4 md:p-5 space-y-3`}>
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm md:text-base font-semibold flex items-center gap-2">
-                  <UsersRound className="w-4 h-4" />
-                  Utenti (clicca per vedere i background in modale)
-                </h3>
-                <span className="text-[11px] text-[var(--color-text-muted)]">
-                  Job = gruppo
-                </span>
-              </div>
-
-              <div className="space-y-2 max-h-[560px] overflow-y-auto">
-                {usersInQueue.map((u) => {
-                  const st = userStats.get(u.userId);
-                  const last = st?.lastServerJoinAt
-                    ? new Date(st.lastServerJoinAt).toLocaleString("it-IT", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })
-                    : "—";
-                  const hrs = Number(st?.hoursPlayed ?? 0).toFixed(1);
-
-                  return (
-                    <motion.button
-                      key={u.userId}
-                      type="button"
-                      whileTap={{ scale: reduce ? 1 : 0.985 }}
-                      onClick={() => openUserModal(u)}
-                      className="w-full text-left rounded-2xl border border-[var(--color-border)] bg-black/20 hover:bg-white/5 px-4 py-3 transition"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-semibold truncate">
-                            {u.discordName}
-                          </p>
-                          <p className="text-[11px] text-[var(--color-text-muted)] truncate">
-                            ID:{" "}
-                            <span className="font-mono">
-                              {u.discordId || u.userId}
-                            </span>
-                            <span className="mx-2 opacity-50">•</span>
-                            Job:{" "}
-                            <span className="text-white/80 font-semibold">
-                              {u.job || "—"}
-                            </span>
-                            <span className="mx-2 opacity-50">•</span>
-                            BG:{" "}
-                            <span className="text-white/80 font-semibold">
-                              {u.backgroundsCount}
-                            </span>
-                          </p>
-                        </div>
-
-                        <span
-                          className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
-                            u.latestStatus
-                          )}`}
-                        >
-                          {STATUS_LABELS[u.latestStatus] ?? u.latestStatus}
-                        </span>
-                      </div>
-                    </motion.button>
-                  );
-                })}
-
-                {usersInQueue.length === 0 && (
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Nessun utente trovato.
-                  </p>
-                )}
-              </div>
-            </div>
+            <UsersTab
+              shellCard={shellCard}
+              reduce={reduce}
+              usersFiltered={usersFiltered}
+              userStats={userStats}
+              openUserModal={openUserModal}
+            />
           )}
 
           {view === "backgrounds" && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <aside className="lg:col-span-5 xl:col-span-4">
-                <div className={`${shellCard} p-3 space-y-3`}>
-                  <div className="max-h-[540px] overflow-y-auto space-y-2 pt-1">
-                    <AnimatePresence initial={false}>
-                      {filtered.map((item) => {
-                        const isActive = selected?.id === item.id;
-                        return (
-                          <motion.button
-                            key={item.id}
-                            type="button"
-                            layout
-                            {...cardAnim}
-                            whileHover={{ y: reduce ? 0 : -1 }}
-                            onClick={() => handleSelect(item.id)}
-                            className={`w-full text-left rounded-2xl border px-4 py-3 text-xs md:text-sm transition ${
-                              isActive
-                                ? "border-[var(--blue)] bg-[var(--color-surface)]"
-                                : "border-[var(--color-border)] bg-black/20 hover:bg-white/5"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold truncate">
-                                {item.nome} {item.cognome}
-                              </span>
-                              <span
-                                className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
-                                  item.status
-                                )}`}
-                              >
-                                {STATUS_LABELS[item.status]}
-                              </span>
-                            </div>
-
-                            <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-[var(--color-text-muted)]">
-                              <span className="truncate">
-                                {item.discordName}
-                                {item.job ? (
-                                  <span className="ml-2 opacity-70">
-                                    • {item.job}
-                                  </span>
-                                ) : null}
-                              </span>
-                              <span>
-                                {new Date(item.submittedAt).toLocaleString(
-                                  "it-IT",
-                                  {
-                                    dateStyle: "short",
-                                    timeStyle: "short",
-                                  }
-                                )}
-                              </span>
-                            </div>
-                          </motion.button>
-                        );
-                      })}
-                    </AnimatePresence>
-
-                    {filtered.length === 0 && (
-                      <p className="text-xs text-[var(--color-text-muted)] px-2 py-3">
-                        Nessun background con questo filtro.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </aside>
+            <BackgroundsTab>
+              <BackgroundsList
+                shellCard={shellCard}
+                filtered={filtered}
+                selected={selected}
+                handleSelect={handleSelect}
+                cardAnim={cardAnim}
+                reduce={reduce}
+              />
 
               <main className="lg:col-span-7 xl:col-span-8">
-                <AnimatePresence mode="wait">
-                  {selected ? (
-                    <motion.div
-                      key={selected.id}
-                      initial={{ opacity: 0, y: reduce ? 0 : 10 }}
-                      animate={{
-                        opacity: 1,
-                        y: 0,
-                        transition: { duration: 0.2 },
-                      }}
-                      exit={{
-                        opacity: 0,
-                        y: reduce ? 0 : -8,
-                        transition: { duration: 0.15 },
-                      }}
-                      className={`${shellCard} p-4 md:p-5 space-y-4`}
-                    >
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                            Background
-                          </p>
-                          <h2 className="text-lg md:text-xl font-semibold truncate">
-                            {selected.nome} {selected.cognome}
-                          </h2>
-
-                          <p className="text-xs text-[var(--color-text-muted)]">
-                            <span className="truncate">
-                              {selected.discordName} • ID:{" "}
-                              <span className="font-mono">
-                                {selected.discordId}
-                              </span>
-                              {selected.job ? (
-                                <>
-                                  <span className="mx-2 opacity-50">•</span>
-                                  Job:{" "}
-                                  <span className="font-semibold text-white/80">
-                                    {selected.job}
-                                  </span>
-                                </>
-                              ) : null}
-                            </span>
-                          </p>
-
-                        </div>
-
-                        <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)]">
-                          <span
-                            className={`px-3 py-1 rounded-full border text-[10px] ${statusPill(
-                              selected.status
-                            )}`}
-                          >
-                            {STATUS_LABELS[selected.status]}
-                          </span>
-                          <span>
-                            Inviato:{" "}
-                            {new Date(selected.submittedAt).toLocaleString(
-                              "it-IT",
-                              {
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              }
-                            )}
-                          </span>
-                          <span>
-                            Ultimo agg.:{" "}
-                            {new Date(selected.lastUpdatedAt).toLocaleString(
-                              "it-IT",
-                              {
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              }
-                            )}
-                          </span>
-                        </div>
-                      </div>
-
-                      {isLocked && (
-                        <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm">
-                          <div className="flex items-start gap-2">
-                            <Lock className="w-4 h-4 mt-0.5 text-emerald-300" />
-                            <div>
-                              <p className="font-semibold text-emerald-200">
-                                Background approvato – stato bloccato
-                              </p>
-                              <p className="text-xs text-emerald-200/80">
-                                Lo stato non può più cambiare, ma Job e Commenti
-                                restano modificabili.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* JOB */}
-                      <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
-                        <h3 className="font-semibold text-sm md:text-base flex items-center gap-2">
-                          <Briefcase className="w-4 h-4 text-[var(--color-text-muted)]" />
-                          Job (Gruppo)
-                        </h3>
-
-                        <div className="flex flex-col md:flex-row md:items-center gap-2">
-                          <input
-                            value={jobDraft}
-                            onChange={(e) => setJobDraft(e.target.value)}
-                            disabled={!canEditJob || jobSaving}
-                            placeholder="Inserisci job (es. Polizia, Meccanico...)"
-                            className="flex-1 px-3 py-2 rounded-2xl border border-[var(--color-border)] bg-[#111326] text-sm outline-none focus:border-[var(--blue)] disabled:opacity-50"
-                          />
-
-                          <div className="flex items-center gap-2">
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={saveJob}
-                              disabled={!canEditJob || jobSaving}
-                              className="px-4 py-2 rounded-full font-semibold bg-white/10 text-white border border-[var(--color-border)] hover:bg-white/15 disabled:opacity-50 inline-flex items-center gap-2"
-                            >
-                              <Save className="w-4 h-4" />
-                              {jobSaving ? "Salvataggio..." : "Salva job"}
-                            </motion.button>
-
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={clearJob}
-                              disabled={!canEditJob || jobSaving}
-                              className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 disabled:opacity-50 inline-flex items-center gap-2"
-                              title="Rimuovi job"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Togli job
-                            </motion.button>
-                          </div>
-                        </div>
-                      </section>
-
-                      {/* STORIA */}
-                      <div className="space-y-4 text-xs md:text-sm">
-                        <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">
-                          <h3 className="font-semibold text-sm md:text-base flex items-center gap-2">
-                            <Info className="w-4 h-4 text-[var(--color-text-muted)]" />
-                            II. Storia del personaggio
-                          </h3>
-
-                          <div>
-                            <p className="text-[11px] text-[var(--color-text-muted)] mb-1">
-                              Storia in breve
-                            </p>
-
-                            {editMode ? (
-                              <textarea
-                                disabled={updating || isLocked}
-                                className="w-full min-h-[110px] rounded-2xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y disabled:opacity-50"
-                                value={editDraft.storiaBreve}
-                                onChange={(e) =>
-                                  setEditDraft((prev) => ({
-                                    ...prev,
-                                    storiaBreve: e.target.value,
-                                  }))
-                                }
-                              />
-                            ) : (
-                              <p className="text-[var(--color-text)] whitespace-pre-line leading-relaxed">
-                                {selected.data.storiaBreve || "-"}
-                              </p>
-                            )}
-                          </div>
-                        </section>
-
-                        {/* COMMENTI */}
-                        <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-semibold text-sm md:text-base flex items-center gap-2">
-                              <MessageSquarePlus className="w-4 h-4 text-[var(--color-text-muted)]" />
-                              Commenti staff
-                            </h3>
-                            <span className="text-[11px] text-[var(--color-text-muted)]">
-                              {commentsLoading
-                                ? "Caricamento..."
-                                : `${comments.length} commenti`}
-                            </span>
-                          </div>
-
-                          <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1">
-                            {sortedComments.map((comment) => (
-                              <div
-                                key={comment.id} // Usa comment.id per garantire una key unica
-                                className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-3 py-2"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-xs font-semibold truncate">
-                                      {comment.authorName}
-                                    </span>
-                                    <RoleBadge role={comment.authorRole} />
-                                  </div>
-                                  <span className="text-[10px] text-[var(--color-text-muted)]">
-                                    {new Date(comment.createdAt).toLocaleString(
-                                      "it-IT",
-                                      {
-                                        dateStyle: "short",
-                                        timeStyle: "short",
-                                      }
-                                    )}
-                                  </span>
-                                </div>
-
-                                <div className="mt-1 max-h-[64px] overflow-y-auto">
-                                  <p className="text-xs md:text-sm text-[var(--color-text)] whitespace-pre-line leading-relaxed">
-                                    {comment.message}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-
-                            {!commentsLoading && comments.length === 0 && (
-                              <p className="text-xs text-[var(--color-text-muted)]">
-                                Nessun commento.
-                              </p>
-                            )}
-                          </div>
-
-                          <textarea
-                            disabled={commentSending || updating}
-                            className="w-full min-h-[90px] rounded-2xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y disabled:opacity-50"
-                            placeholder="Scrivi un commento..."
-                            value={commentDraft}
-                            onChange={(e) => setCommentDraft(e.target.value)}
-                          />
-
-                          <div className="flex flex-wrap gap-2">
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={sendComment}
-                              disabled={commentSending}
-                              className="px-4 py-2 rounded-full font-semibold bg-white/10 text-white border border-[var(--color-border)] hover:bg-white/15 disabled:opacity-50 inline-flex items-center gap-2"
-                            >
-                              <MessageSquarePlus className="w-4 h-4" />
-                              {commentSending ? "Invio..." : "Invia commento"}
-                            </motion.button>
-                          </div>
-                        </section>
-                      </div>
-
-                      {/* AZIONI */}
-                      <div className="mt-2 border-t border-[var(--color-border)] pt-4 space-y-3">
-                        {!editMode ? (
-                          <div className="flex flex-wrap gap-2 text-xs md:text-sm">
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={handleApprove}
-                              disabled={updating || isLocked}
-                              className="px-4 py-2 rounded-full font-semibold bg-emerald-500/90 text-[#050816] shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                              Approva
-                            </motion.button>
-
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={handleReject}
-                              disabled={updating || isLocked}
-                              className="px-4 py-2 rounded-full font-semibold bg-red-500/90 text-white shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
-                            >
-                              <XCircle className="w-4 h-4" />
-                              Rifiuta
-                            </motion.button>
-
-                            {canEditBgText && (
-                              <motion.button
-                                type="button"
-                                whileTap={{ scale: reduce ? 1 : 0.97 }}
-                                onClick={startEdit}
-                                disabled={updating || isLocked}
-                                className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 inline-flex items-center gap-2 disabled:opacity-50"
-                              >
-                                <Pencil className="w-4 h-4" />
-                                Modifica BG
-                              </motion.button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-2 text-xs md:text-sm">
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={saveEdit}
-                              disabled={updating || isLocked}
-                              className="px-4 py-2 rounded-full font-semibold bg-[var(--blue)] text-[#050816] shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2"
-                            >
-                              <Save className="w-4 h-4" />
-                              Salva modifiche
-                            </motion.button>
-
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={cancelEdit}
-                              disabled={updating}
-                              className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 disabled:opacity-50 inline-flex items-center gap-2"
-                            >
-                              <Ban className="w-4 h-4" />
-                              Annulla
-                            </motion.button>
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.p
-                      key="empty"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-sm text-[var(--color-text-muted)]"
-                    >
-                      Nessun background selezionato.
-                    </motion.p>
-                  )}
-                </AnimatePresence>
+                <BackgroundDetail
+                  selected={selected}
+                  shellCard={shellCard}
+                  reduce={reduce}
+                  isLocked={isLocked}
+                  canEditJob={canEditJob}
+                  jobSaving={jobSaving}
+                  jobDraft={jobDraft}
+                  setJobDraft={setJobDraft}
+                  saveJob={saveJob}
+                  clearJob={clearJob}
+                  canEditBgText={canEditBgText}
+                  editMode={editMode}
+                  editDraft={editDraft}
+                  setEditDraft={setEditDraft}
+                  startEdit={startEdit}
+                  saveEdit={saveEdit}
+                  cancelEdit={cancelEdit}
+                  updating={updating}
+                  handleApprove={handleApprove}
+                  handleReject={handleReject}
+                  commentsLoading={commentsLoading}
+                  comments={comments}
+                  sortedComments={sortedComments}
+                  commentDraft={commentDraft}
+                  setCommentDraft={setCommentDraft}
+                  commentSending={commentSending}
+                  sendComment={sendComment}
+                />
               </main>
-            </div>
+            </BackgroundsTab>
           )}
         </>
       )}
 
-      {/* ✅ REJECT MODAL */}
-      <AnimatePresence>
-        {rejectOpen && selected && (
-          <motion.div
-            key="rejectModal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: { duration: 0.15 } }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-            className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 md:p-6"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) closeRejectModal();
-            }}
-          >
-            <motion.div
-              initial={{
-                opacity: 0,
-                y: reduce ? 0 : 12,
-                scale: reduce ? 1 : 0.98,
-              }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                transition: { duration: 0.18 },
-              }}
-              exit={{
-                opacity: 0,
-                y: reduce ? 0 : 10,
-                scale: reduce ? 1 : 0.98,
-                transition: { duration: 0.12 },
-              }}
-              className={`w-full max-w-lg ${shellCard} p-4 md:p-5 space-y-4`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                    Rifiuto background
-                  </p>
-                  <h3 className="text-lg font-semibold truncate">
-                    {selected.nome} {selected.cognome}
-                  </h3>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Inserisci il motivo del rifiuto (verrà salvato anche nei
-                    commenti).
-                  </p>
-                </div>
+      <RejectModal
+        rejectOpen={rejectOpen}
+        selected={selected}
+        reduce={reduce}
+        shellCard={shellCard}
+        rejectReasonDraft={rejectReasonDraft}
+        setRejectReasonDraft={setRejectReasonDraft}
+        rejectSending={rejectSending}
+        closeRejectModal={closeRejectModal}
+        submitReject={submitReject}
+      />
 
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: reduce ? 1 : 0.97 }}
-                  onClick={closeRejectModal}
-                  disabled={rejectSending}
-                  className="px-3 py-2 rounded-full border border-[var(--color-border)] bg-black/20 hover:bg-white/5 inline-flex items-center gap-2 text-xs disabled:opacity-50"
-                >
-                  <CloseIcon className="w-4 h-4" />
-                  Chiudi
-                </motion.button>
-              </div>
-
-              <textarea
-                value={rejectReasonDraft}
-                onChange={(e) => setRejectReasonDraft(e.target.value)}
-                disabled={rejectSending}
-                placeholder="Scrivi qui la motivazione del rifiuto…"
-                className="w-full min-h-[120px] rounded-2xl bg-[#111326] border border-[var(--color-border)] px-3 py-2 text-xs md:text-sm outline-none focus:border-[var(--blue)] resize-y disabled:opacity-50"
-                maxLength={500}
-              />
-
-              <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
-                <span>
-                  {rejectReasonDraft.trim() ? "Ok" : "Motivo obbligatorio"}
-                </span>
-                <span>{rejectReasonDraft.length}/500</span>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: reduce ? 1 : 0.97 }}
-                  onClick={closeRejectModal}
-                  disabled={rejectSending}
-                  className="px-4 py-2 rounded-full font-semibold border border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-white/5 disabled:opacity-50 inline-flex items-center gap-2 text-xs"
-                >
-                  Annulla
-                </motion.button>
-
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: reduce ? 1 : 0.97 }}
-                  onClick={submitReject}
-                  disabled={rejectSending || !rejectReasonDraft.trim()}
-                  className="px-4 py-2 rounded-full font-semibold bg-red-500/90 text-white shadow-md hover:brightness-110 disabled:opacity-50 inline-flex items-center gap-2 text-xs"
-                >
-                  <XCircle className="w-4 h-4" />
-                  {rejectSending ? "Invio..." : "Invia rifiuto"}
-                </motion.button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* USER MODAL */}
-      <AnimatePresence>
-        {userModalOpen && modalUser && (
-          <motion.div
-            key="userModal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1, transition: { duration: 0.15 } }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-            className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 md:p-6"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) closeUserModal();
-            }}
-          >
-            <motion.div
-              initial={{
-                opacity: 0,
-                y: reduce ? 0 : 12,
-                scale: reduce ? 1 : 0.98,
-              }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                transition: { duration: 0.18 },
-              }}
-              exit={{
-                opacity: 0,
-                y: reduce ? 0 : 10,
-                scale: reduce ? 1 : 0.98,
-                transition: { duration: 0.12 },
-              }}
-              className={`w-full max-w-3xl ${shellCard} p-4 md:p-5`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="text-lg md:text-xl font-semibold truncate">
-                    {modalUser.discordName}
-                  </h3>
-                  <p className="text-[11px] text-[var(--color-text-muted)]">
-                    ID:{" "}
-                    <span className="font-mono">
-                      {modalUser.discordId || modalUser.userId}
-                    </span>
-                    <span className="mx-2 opacity-50">•</span>
-                    Job:{" "}
-                    <span className="text-white/80 font-semibold">
-                      {modalUser.job || "—"}
-                    </span>
-                  </p>
-                </div>
-
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: reduce ? 1 : 0.97 }}
-                  onClick={closeUserModal}
-                  className="px-3 py-2 rounded-full border border-[var(--color-border)] bg-black/20 hover:bg-white/5 inline-flex items-center gap-2 text-xs"
-                >
-                  <CloseIcon className="w-4 h-4" />
-                  Chiudi
-                </motion.button>
-              </div>
-
-              <div className="mt-4 space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                {modalUserBackgrounds.map((bg) => (
-                  <div
-                    key={bg.id}
-                    className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-semibold truncate">
-                          {bg.nome} {bg.cognome}
-                        </p>
-                        <p className="text-[11px] text-[var(--color-text-muted)]">
-                          Inviato:{" "}
-                          {new Date(bg.submittedAt).toLocaleString("it-IT", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                          {bg.job ? (
-                            <>
-                              <span className="mx-2 opacity-50">•</span>
-                              Job:{" "}
-                              <span className="text-white/80 font-semibold">
-                                {bg.job}
-                              </span>
-                            </>
-                          ) : null}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2.5 py-1 rounded-full border text-[10px] ${statusPill(
-                            bg.status
-                          )}`}
-                        >
-                          {STATUS_LABELS[bg.status] ?? bg.status}
-                        </span>
-
-                        <motion.button
-                          type="button"
-                          whileTap={{ scale: reduce ? 1 : 0.97 }}
-                          onClick={() => selectFromModal(bg.id)}
-                          className="px-3 py-2 rounded-full font-semibold bg-white/10 text-white border border-[var(--color-border)] hover:bg-white/15 inline-flex items-center gap-2 text-xs"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          Apri
-                        </motion.button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {modalUserBackgrounds.length === 0 && (
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Nessun background per questo utente.
-                  </p>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <UserModal
+        userModalOpen={userModalOpen}
+        modalUser={modalUser}
+        modalUserBackgrounds={modalUserBackgrounds}
+        reduce={reduce}
+        shellCard={shellCard}
+        closeUserModal={closeUserModal}
+        selectFromModal={selectFromModal}
+      />
     </section>
   );
 }

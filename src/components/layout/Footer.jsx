@@ -1,5 +1,5 @@
 // src/components/Footer.jsx
-import logo from "../assets/img/logo.png";
+import logo from "../../assets/img/logo.png";
 
 export default function Footer() {
   const year = new Date().getFullYear();
