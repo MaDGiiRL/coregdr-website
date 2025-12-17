@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
+import { makeNeonShaderMaterial, makeBuildingShaderMaterial } from "./gpuInstancedMaterials";
 
-import FpsOverlay from "../../connect/FpsOverlay"; // ✅ aggiusta il path se diverso
+import FpsOverlay from "../../connect/FpsOverlay";
 import { createGtaTexturePack } from "./gtaTextures";
 
 const PALETTE = {
@@ -36,6 +37,56 @@ function pickQuality() {
   return "high";
 }
 
+/**
+ * DPR adattivo: mantiene fluidità (non limita FPS) ma abbassa risoluzione quando serve.
+ */
+function useAdaptiveDpr(quality) {
+  const maxDpr = quality === "low" ? 1.0 : quality === "mid" ? 1.25 : 1.5;
+  const minDpr = 1.0;
+  const [dpr, setDpr] = useState(maxDpr);
+
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    let frames = 0;
+
+    const loop = (t) => {
+      frames++;
+      const dt = t - last;
+      if (dt >= 700) {
+        const fps = (frames * 1000) / dt;
+        frames = 0;
+        last = t;
+
+        setDpr((cur) => {
+          // scende più velocemente se soffre, sale lentamente se va bene
+          if (fps < 52) return Math.max(minDpr, cur - 0.12);
+          if (fps > 58) return Math.min(maxDpr, cur + 0.04);
+          return cur;
+        });
+      }
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [quality]);
+
+  // quando cambia quality, riallinea subito
+  useEffect(() => {
+    setDpr(maxDpr);
+  }, [maxDpr]);
+
+  return dpr;
+}
+
+/**
+ * Prepara setMatrixAt super veloce con Matrix4.
+ */
+function setInstanceMatrix(im, i, m) {
+  im.setMatrixAt(i, m);
+}
+
 function CityRunnerScene({ scrollRef, quality }) {
   const group = useRef();
 
@@ -44,24 +95,27 @@ function CityRunnerScene({ scrollRef, quality }) {
     [quality]
   );
 
+  // Moltiplicatori: spingi più aggressivo in low
   const Q = useMemo(() => {
-    if (quality === "low") return { neonMul: 0.45, tubeMul: 0.5, bMul: 0.55 };
-    if (quality === "mid") return { neonMul: 0.7, tubeMul: 0.75, bMul: 0.8 };
-    return { neonMul: 1, tubeMul: 1, bMul: 1 };
+    if (quality === "low") return { neonMul: 0.3, tubeMul: 0.35, bMul: 0.4 };
+    if (quality === "mid") return { neonMul: 0.6, tubeMul: 0.7, bMul: 0.75 };
+    return { neonMul: 1.0, tubeMul: 1.0, bMul: 1.0 };
   }, [quality]);
 
   const speedRef = useRef(0);
   const baseSpeed = 18;
 
-  const ROAD_LOOP = 220;
+  const ROAD_LOOP = quality === "high" ? 210 : quality === "mid" ? 190 : 165;
   const zStart = 18;
 
+  // Geometrie riusate
   const dashGeo = useMemo(() => new THREE.PlaneGeometry(0.22, 2.2), []);
   const sideGeo = useMemo(() => new THREE.PlaneGeometry(0.16, 5.0), []);
   const neonGeo = useMemo(() => new THREE.BoxGeometry(0.28, 1, 0.05), []);
   const tubeGeo = useMemo(() => new THREE.BoxGeometry(0.18, 1.9, 0.06), []);
   const buildingGeo = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
 
+  // Materiali
   const dashMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -138,8 +192,6 @@ function CityRunnerScene({ scrollRef, quality }) {
       new THREE.MeshStandardMaterial({
         map: buildingTex,
         color: PALETTE.bDark,
-        emissive: new THREE.Color("#000000"),
-        emissiveIntensity: 0,
         roughness: 0.98,
         metalness: 0.04,
       }),
@@ -172,108 +224,132 @@ function CityRunnerScene({ scrollRef, quality }) {
     [buildingTex]
   );
 
+  // Refs instanced mesh
   const dashIM = useRef();
   const sideIM = useRef();
   const neonBlueIM = useRef();
   const neonVioletIM = useRef();
   const neonPinkIM = useRef();
   const tubeIM = useRef();
-
   const bDarkL = useRef();
   const bDarkR = useRef();
   const bCoolL = useRef();
   const bCoolR = useRef();
 
+  // ---- DATA (precompute)
   const dashes = useMemo(() => {
     const gap = 4.2;
     const count = Math.floor(ROAD_LOOP / gap);
-    return Array.from({ length: count }, (_, i) => ({ z: -i * gap }));
-  }, []);
+    return { gap, count };
+  }, [ROAD_LOOP]);
 
   const sideLines = useMemo(() => {
     const gap = 6.4;
     const count = Math.floor(ROAD_LOOP / gap);
-    return Array.from({ length: count }, (_, i) => ({
-      z: -i * gap,
-      x: i % 2 ? 4.8 : -4.8,
-    }));
-  }, []);
+    // x alternati precomputati in Float32Array
+    const x = new Float32Array(count);
+    for (let i = 0; i < count; i++) x[i] = i % 2 ? 4.8 : -4.8;
+    return { gap, count, x };
+  }, [ROAD_LOOP]);
 
   const neons = useMemo(() => {
     const gap = 4.0;
     const baseCount = Math.floor(ROAD_LOOP / gap) + 44;
-    const count = Math.floor(baseCount * Q.neonMul);
+    const count = Math.max(1, Math.floor(baseCount * Q.neonMul));
 
-    const arr = [];
+    // arrays compatti
+    const x = new Float32Array(count);
+    const len = new Float32Array(count);
+    const tint = new Uint8Array(count); // 0 blue, 1 violet, 2 pink
+    const z0 = new Float32Array(count);
+
     for (let i = 0; i < count; i++) {
       const pick = Math.random();
-      const tint = pick < 0.52 ? "blue" : pick < 0.86 ? "violet" : "pink";
-      arr.push({
-        z: -i * gap - Math.random() * 2.8,
-        x: (Math.random() < 0.5 ? -1 : 1) * (6.1 + Math.random() * 1.8),
-        tint,
-        len: 2.1 + Math.random() * 4.4,
-      });
+      const t = pick < 0.52 ? 0 : pick < 0.86 ? 1 : 2;
+      tint[i] = t;
+      z0[i] = -i * gap - Math.random() * 2.8;
+      x[i] = (Math.random() < 0.5 ? -1 : 1) * (6.1 + Math.random() * 1.8);
+      len[i] = 2.1 + Math.random() * 4.4;
     }
-    return arr;
-  }, [Q.neonMul]);
+    return { gap, count, x, len, tint, z0 };
+  }, [ROAD_LOOP, Q.neonMul]);
 
   const tubes = useMemo(() => {
     const gap = 6.0;
     const baseCount = Math.floor(ROAD_LOOP / gap) + 26;
-    const count = Math.floor(baseCount * Q.tubeMul);
-
-    return Array.from({ length: count }, (_, i) => ({
-      z: -i * gap - Math.random() * 3.8,
-      x: (Math.random() < 0.5 ? -1 : 1) * (3.9 + Math.random() * 1.2),
-    }));
-  }, [Q.tubeMul]);
+    const count = Math.max(1, Math.floor(baseCount * Q.tubeMul));
+    const x = new Float32Array(count);
+    const z0 = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      z0[i] = -i * gap - Math.random() * 3.8;
+      x[i] = (Math.random() < 0.5 ? -1 : 1) * (3.9 + Math.random() * 1.2);
+    }
+    return { gap, count, x, z0 };
+  }, [ROAD_LOOP, Q.tubeMul]);
 
   const buildingsAll = useMemo(() => {
-    const gap = 3.8;
+    const gap = quality === "high" ? 4.2 : quality === "mid" ? 4.8 : 5.4;
     const baseCount = Math.floor((ROAD_LOOP + 40) / gap);
-    const count = Math.floor(baseCount * Q.bMul);
+    const count = Math.max(1, Math.floor(baseCount * Q.bMul));
 
-    return Array.from({ length: count }, (_, i) => ({
-      z: -i * gap - 16,
-      h: 7 + Math.random() * 26,
-      w: 1.6 + Math.random() * 2.4,
-      d: 2.1 + Math.random() * 3.2,
-      xL: -9.2 - Math.random() * 4.2,
-      xR: 9.2 + Math.random() * 4.2,
-      cool: Math.random() < 0.55,
-    }));
-  }, [Q.bMul]);
+    // compatti
+    const z0 = new Float32Array(count);
+    const h = new Float32Array(count);
+    const w = new Float32Array(count);
+    const d = new Float32Array(count);
+    const xL = new Float32Array(count);
+    const xR = new Float32Array(count);
+    const cool = new Uint8Array(count);
 
-  const neonGroups = useMemo(() => {
-    const blue = [];
-    const violet = [];
-    const pink = [];
-    neons.forEach((n, idx) => {
-      if (n.tint === "blue") blue.push({ ...n, idx });
-      else if (n.tint === "violet") violet.push({ ...n, idx });
-      else pink.push({ ...n, idx });
-    });
-    return { blue, violet, pink };
-  }, [neons]);
+    for (let i = 0; i < count; i++) {
+      z0[i] = -i * gap - 16;
+      h[i] = 7 + Math.random() * 26;
+      w[i] = 1.6 + Math.random() * 2.4;
+      d[i] = 2.1 + Math.random() * 3.2;
+      xL[i] = -9.2 - Math.random() * 4.2;
+      xR[i] = 9.2 + Math.random() * 4.2;
+      cool[i] = Math.random() < 0.55 ? 1 : 0;
+    }
+    return { count, z0, h, w, d, xL, xR, cool };
+  }, [ROAD_LOOP, Q.bMul, quality]);
 
-  const buildingGroups = useMemo(() => {
-    const dark = [];
-    const cool = [];
-    buildingsAll.forEach((b, idx) => {
-      (b.cool ? cool : dark).push({ ...b, idx });
-    });
-    return { dark, cool };
-  }, [buildingsAll]);
+  // ---- Z state (mutabile, zero allocations per frame)
+  const dashZ = useRef(null);
+  const sideZ = useRef(null);
+  const neonZ = useRef(null);
+  const tubeZ = useRef(null);
+  const bZ = useRef(null);
 
-  const dashZ = useRef(dashes.map((d) => d.z));
-  const sideZ = useRef(sideLines.map((s) => s.z));
-  const neonZ = useRef(neons.map((n) => n.z));
-  const tubeZ = useRef(tubes.map((t) => t.z));
-  const bZ = useRef(buildingsAll.map((b) => b.z));
+  useEffect(() => {
+    dashZ.current = new Float32Array(dashes.count);
+    for (let i = 0; i < dashes.count; i++) dashZ.current[i] = -i * dashes.gap;
 
-  const tmp = useMemo(() => new THREE.Object3D(), []);
+    sideZ.current = new Float32Array(sideLines.count);
+    for (let i = 0; i < sideLines.count; i++)
+      sideZ.current[i] = -i * sideLines.gap;
 
+    neonZ.current = new Float32Array(neons.count);
+    neonZ.current.set(neons.z0);
+
+    tubeZ.current = new Float32Array(tubes.count);
+    tubeZ.current.set(tubes.z0);
+
+    bZ.current = new Float32Array(buildingsAll.count);
+    bZ.current.set(buildingsAll.z0);
+  }, [dashes, sideLines, neons, tubes, buildingsAll]);
+
+  // ---- Matrici / temp
+  const m4 = useMemo(() => new THREE.Matrix4(), []);
+  const pos = useMemo(() => new THREE.Vector3(), []);
+  const quat = useMemo(() => new THREE.Quaternion(), []);
+  const scl = useMemo(() => new THREE.Vector3(), []);
+  const rotNeon = useMemo(() => new THREE.Euler(-Math.PI / 2, 0, 0), []);
+  const rotFlatQuat = useMemo(
+    () => new THREE.Quaternion().setFromEuler(rotNeon),
+    [rotNeon]
+  );
+
+  // ---- Texture setup
   useEffect(() => {
     roadTex.wrapS = THREE.RepeatWrapping;
     roadTex.wrapT = THREE.RepeatWrapping;
@@ -281,84 +357,106 @@ function CityRunnerScene({ scrollRef, quality }) {
     roadTex.needsUpdate = true;
   }, [roadTex]);
 
+  // ---- Mark instance matrices dynamic + initial fill
   useEffect(() => {
-    if (dashIM.current) {
-      for (let i = 0; i < dashes.length; i++) {
-        tmp.position.set(0, 0.02, dashZ.current[i]);
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, 1, 1);
-        tmp.updateMatrix();
-        dashIM.current.setMatrixAt(i, tmp.matrix);
+    const markDynamic = (ref) => {
+      if (!ref.current) return;
+      ref.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    };
+
+    [
+      dashIM,
+      sideIM,
+      neonBlueIM,
+      neonVioletIM,
+      neonPinkIM,
+      tubeIM,
+      bDarkL,
+      bDarkR,
+      bCoolL,
+      bCoolR,
+    ].forEach(markDynamic);
+  }, []);
+
+  // ---- Initial fill (una sola volta per set)
+  useEffect(() => {
+    // dashes
+    if (dashIM.current && dashZ.current) {
+      for (let i = 0; i < dashes.count; i++) {
+        pos.set(0, 0.02, dashZ.current[i]);
+        scl.set(1, 1, 1);
+        m4.compose(pos, rotFlatQuat, scl);
+        setInstanceMatrix(dashIM.current, i, m4);
       }
       dashIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    if (sideIM.current) {
-      for (let i = 0; i < sideLines.length; i++) {
-        tmp.position.set(sideLines[i].x, 0.02, sideZ.current[i]);
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, 1, 1);
-        tmp.updateMatrix();
-        sideIM.current.setMatrixAt(i, tmp.matrix);
+    // sides
+    if (sideIM.current && sideZ.current) {
+      for (let i = 0; i < sideLines.count; i++) {
+        pos.set(sideLines.x[i], 0.02, sideZ.current[i]);
+        scl.set(1, 1, 1);
+        m4.compose(pos, rotFlatQuat, scl);
+        setInstanceMatrix(sideIM.current, i, m4);
       }
       sideIM.current.instanceMatrix.needsUpdate = true;
     }
-  }, [dashes.length, sideLines.length, tmp]);
 
-  useEffect(() => {
-    const fillNeon = (ref, list) => {
-      if (!ref.current) return;
-      for (let i = 0; i < list.length; i++) {
-        const n = list[i];
-        tmp.position.set(n.x, 0.03, neonZ.current[n.idx]);
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, n.len, 1);
-        tmp.updateMatrix();
-        ref.current.setMatrixAt(i, tmp.matrix);
+    // tubes
+    if (tubeIM.current && tubeZ.current) {
+      for (let i = 0; i < tubes.count; i++) {
+        pos.set(tubes.x[i], 0.035, tubeZ.current[i]);
+        scl.set(1, 1, 1);
+        m4.compose(pos, rotFlatQuat, scl);
+        setInstanceMatrix(tubeIM.current, i, m4);
       }
-      ref.current.instanceMatrix.needsUpdate = true;
-    };
-
-    fillNeon(neonBlueIM, neonGroups.blue);
-    fillNeon(neonVioletIM, neonGroups.violet);
-    fillNeon(neonPinkIM, neonGroups.pink);
-  }, [neonGroups, tmp]);
-
-  useEffect(() => {
-    if (!tubeIM.current) return;
-    for (let i = 0; i < tubes.length; i++) {
-      tmp.position.set(tubes[i].x, 0.035, tubeZ.current[i]);
-      tmp.rotation.set(-Math.PI / 2, 0, 0);
-      tmp.scale.set(1, 1, 1);
-      tmp.updateMatrix();
-      tubeIM.current.setMatrixAt(i, tmp.matrix);
+      tubeIM.current.instanceMatrix.needsUpdate = true;
     }
-    tubeIM.current.instanceMatrix.needsUpdate = true;
-  }, [tubes.length, tmp]);
+  }, [dashes.count, sideLines, tubes, m4, pos, scl, rotFlatQuat]);
 
-  useEffect(() => {
-    const fillBuildings = (ref, list, side) => {
-      if (!ref.current) return;
-      for (let i = 0; i < list.length; i++) {
-        const b = list[i];
-        const x = side === "L" ? b.xL : b.xR;
-        const z = bZ.current[b.idx];
-        tmp.position.set(x, b.h / 2, z);
-        tmp.rotation.set(0, 0, 0);
-        tmp.scale.set(b.w, b.h, b.d);
-        tmp.updateMatrix();
-        ref.current.setMatrixAt(i, tmp.matrix);
-      }
-      ref.current.instanceMatrix.needsUpdate = true;
-    };
+  // ---- Neon indices per tint (liste di indici)
+  const neonIdxByTint = useMemo(() => {
+    const blue = [];
+    const violet = [];
+    const pink = [];
+    for (let i = 0; i < neons.count; i++) {
+      const t = neons.tint[i];
+      if (t === 0) blue.push(i);
+      else if (t === 1) violet.push(i);
+      else pink.push(i);
+    }
+    return { blue, violet, pink };
+  }, [neons]);
 
-    fillBuildings(bDarkL, buildingGroups.dark, "L");
-    fillBuildings(bDarkR, buildingGroups.dark, "R");
-    fillBuildings(bCoolL, buildingGroups.cool, "L");
-    fillBuildings(bCoolR, buildingGroups.cool, "R");
-  }, [buildingGroups, tmp]);
+  // ---- Building indices per cool
+  const buildingIdx = useMemo(() => {
+    const dark = [];
+    const cool = [];
+    for (let i = 0; i < buildingsAll.count; i++) {
+      (buildingsAll.cool[i] ? cool : dark).push(i);
+    }
+    return { dark, cool };
+  }, [buildingsAll]);
+
+  // ---- Helper: wrap
+  const wrap = (z) => (z > zStart ? z - ROAD_LOOP : z);
+
+  // ---- Round-robin update budget (più aggressivo su low)
+  const tick = useRef(0);
+  const neonSlices = quality === "high" ? 3 : quality === "mid" ? 4 : 6; // più slice = meno lavoro/frame
+  const buildSlices = quality === "high" ? 2 : quality === "mid" ? 3 : 5;
 
   useFrame(({ clock }, delta) => {
+    if (
+      !dashZ.current ||
+      !sideZ.current ||
+      !neonZ.current ||
+      !tubeZ.current ||
+      !bZ.current
+    )
+      return;
+
+    tick.current++;
     const t = clock.getElapsedTime();
     const sp = clamp01(scrollRef.current ?? 0);
 
@@ -375,83 +473,121 @@ function CityRunnerScene({ scrollRef, quality }) {
       group.current.position.y = 0.85 + Math.sin(t * 7.7) * 0.03;
     }
 
+    // Scorrimento texture (super cheap)
     roadTex.offset.y -= dz * 0.0032;
 
-    const wrap = (z) => (z > zStart ? z - ROAD_LOOP : z);
-
+    // --- dashes (aggiorna tutti: sono pochi e importanti visivamente)
     if (dashIM.current) {
-      for (let i = 0; i < dashZ.current.length; i++) {
+      for (let i = 0; i < dashes.count; i++) {
         dashZ.current[i] = wrap(dashZ.current[i] + dz);
-        tmp.position.set(0, 0.02, dashZ.current[i]);
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, 1, 1);
-        tmp.updateMatrix();
-        dashIM.current.setMatrixAt(i, tmp.matrix);
+        pos.set(0, 0.02, dashZ.current[i]);
+        scl.set(1, 1, 1);
+        m4.compose(pos, rotFlatQuat, scl);
+        dashIM.current.setMatrixAt(i, m4);
       }
       dashIM.current.instanceMatrix.needsUpdate = true;
     }
 
+    // --- side lines (tutti, ma pochi)
     if (sideIM.current) {
-      for (let i = 0; i < sideZ.current.length; i++) {
+      for (let i = 0; i < sideLines.count; i++) {
         sideZ.current[i] = wrap(sideZ.current[i] + dz * 0.95);
-        tmp.position.set(sideLines[i].x, 0.02, sideZ.current[i]);
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, 1, 1);
-        tmp.updateMatrix();
-        sideIM.current.setMatrixAt(i, tmp.matrix);
+        pos.set(sideLines.x[i], 0.02, sideZ.current[i]);
+        scl.set(1, 1, 1);
+        m4.compose(pos, rotFlatQuat, scl);
+        sideIM.current.setMatrixAt(i, m4);
       }
       sideIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    const updateNeonList = (ref, list, speedMul = 1.06) => {
-      if (!ref.current) return;
-      for (let i = 0; i < list.length; i++) {
-        const n = list[i];
-        neonZ.current[n.idx] = wrap(neonZ.current[n.idx] + dz * speedMul);
-        tmp.position.set(n.x, 0.03, neonZ.current[n.idx]);
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, n.len, 1);
-        tmp.updateMatrix();
-        ref.current.setMatrixAt(i, tmp.matrix);
-      }
-      ref.current.instanceMatrix.needsUpdate = true;
-    };
-
-    updateNeonList(neonBlueIM, neonGroups.blue);
-    updateNeonList(neonVioletIM, neonGroups.violet);
-    updateNeonList(neonPinkIM, neonGroups.pink);
-
+    // --- tubes (update a slice su mid/low)
     if (tubeIM.current) {
-      for (let i = 0; i < tubeZ.current.length; i++) {
-        tubeZ.current[i] = wrap(tubeZ.current[i] + dz * 1.02);
-        tmp.position.set(tubes[i].x, 0.035, tubeZ.current[i]);
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.scale.set(1, 1, 1);
-        tmp.updateMatrix();
-        tubeIM.current.setMatrixAt(i, tmp.matrix);
+      const phase = tick.current % (quality === "high" ? 1 : 2);
+      if (phase === 0) {
+        for (let i = 0; i < tubes.count; i++) {
+          tubeZ.current[i] = wrap(tubeZ.current[i] + dz * 1.02);
+          pos.set(tubes.x[i], 0.035, tubeZ.current[i]);
+          scl.set(1, 1, 1);
+          m4.compose(pos, rotFlatQuat, scl);
+          tubeIM.current.setMatrixAt(i, m4);
+        }
+        tubeIM.current.instanceMatrix.needsUpdate = true;
+      } else {
+        // anche se non aggiorni matrici, aggiorna la Z state per coerenza
+        for (let i = 0; i < tubes.count; i++)
+          tubeZ.current[i] = wrap(tubeZ.current[i] + dz * 1.02);
       }
-      tubeIM.current.instanceMatrix.needsUpdate = true;
     }
 
-    const updateBuildings = (ref, list, side, speedMul = 0.78) => {
-      if (!ref.current) return;
-      for (let i = 0; i < list.length; i++) {
-        const b = list[i];
-        bZ.current[b.idx] = wrap(bZ.current[b.idx] + dz * speedMul);
-        const x = side === "L" ? b.xL : b.xR;
-        tmp.position.set(x, b.h / 2, bZ.current[b.idx]);
-        tmp.rotation.set(0, 0, 0);
-        tmp.scale.set(b.w, b.h, b.d);
-        tmp.updateMatrix();
-        ref.current.setMatrixAt(i, tmp.matrix);
+    // --- NEON: aggiorna 1 slice per frame, per OGNI TINT (molto più leggero)
+    const updateNeonTintSlice = (ref, idxList, sliceCount, speedMul) => {
+      if (!ref.current || idxList.length === 0) return;
+
+      const phase = tick.current % sliceCount;
+      const per = Math.ceil(idxList.length / sliceCount);
+      const start = phase * per;
+      const end = Math.min(idxList.length, start + per);
+
+      // aggiorna z per tutti, matrice solo per slice
+      for (let k = 0; k < idxList.length; k++) {
+        const idx = idxList[k];
+        neonZ.current[idx] = wrap(neonZ.current[idx] + dz * speedMul);
+      }
+
+      for (let k = start; k < end; k++) {
+        const idx = idxList[k];
+        // instance index dentro ref: è k (posizione nella lista), non idx globale
+        // quindi aggiorni solo le istanze [start..end)
+        const x = neons.x[idx];
+        const z = neonZ.current[idx];
+        const L = neons.len[idx];
+
+        pos.set(x, 0.03, z);
+        scl.set(1, L, 1);
+        m4.compose(pos, rotFlatQuat, scl);
+        ref.current.setMatrixAt(k, m4);
       }
       ref.current.instanceMatrix.needsUpdate = true;
     };
 
-    updateBuildings(bDarkL, buildingGroups.dark, "L");
-    updateBuildings(bDarkR, buildingGroups.dark, "R");
-    updateBuildings(bCoolL, buildingGroups.cool, "L");
-    updateBuildings(bCoolR, buildingGroups.cool, "R");
+    updateNeonTintSlice(neonBlueIM, neonIdxByTint.blue, neonSlices, 1.06);
+    updateNeonTintSlice(neonVioletIM, neonIdxByTint.violet, neonSlices, 1.06);
+    updateNeonTintSlice(neonPinkIM, neonIdxByTint.pink, neonSlices, 1.06);
+
+    // --- BUILDINGS: aggiorna z per tutti, matrice solo 1 slice per lato+tipo
+    const updateBuildingsSlice = (ref, idxList, side, sliceCount, speedMul) => {
+      if (!ref.current || idxList.length === 0) return;
+
+      const phase = tick.current % sliceCount;
+      const per = Math.ceil(idxList.length / sliceCount);
+      const start = phase * per;
+      const end = Math.min(idxList.length, start + per);
+
+      // aggiorna z per tutti
+      for (let k = 0; k < idxList.length; k++) {
+        const idx = idxList[k];
+        bZ.current[idx] = wrap(bZ.current[idx] + dz * speedMul);
+      }
+
+      // aggiorna matrici solo per slice
+      for (let k = start; k < end; k++) {
+        const idx = idxList[k];
+        const z = bZ.current[idx];
+        const x = side === "L" ? buildingsAll.xL[idx] : buildingsAll.xR[idx];
+        const hh = buildingsAll.h[idx];
+        pos.set(x, hh * 0.5, z);
+        scl.set(buildingsAll.w[idx], hh, buildingsAll.d[idx]);
+        m4.compose(pos, quat.identity(), scl); // edifici dritti
+        ref.current.setMatrixAt(k, m4);
+      }
+
+      ref.current.instanceMatrix.needsUpdate = true;
+    };
+
+    updateBuildingsSlice(bDarkL, buildingIdx.dark, "L", buildSlices, 0.78);
+    updateBuildingsSlice(bDarkR, buildingIdx.dark, "R", buildSlices, 0.78);
+    updateBuildingsSlice(bCoolL, buildingIdx.cool, "L", buildSlices, 0.78);
+    updateBuildingsSlice(bCoolR, buildingIdx.cool, "R", buildSlices, 0.78);
   });
 
   return (
@@ -462,9 +598,17 @@ function CityRunnerScene({ scrollRef, quality }) {
         intensity={0.95}
         color={PALETTE.blueLight}
       />
-      <pointLight position={[-12, 7, -8]} intensity={1.3} color={PALETTE.violet} />
-      <pointLight position={[12, 7, -12]} intensity={1.1} color={PALETTE.blue} />
-      <fog attach="fog" args={[PALETTE.bg, 8, 95]} />
+      <pointLight
+        position={[-12, 7, -8]}
+        intensity={1.3}
+        color={PALETTE.violet}
+      />
+      <pointLight
+        position={[12, 7, -12]}
+        intensity={1.1}
+        color={PALETTE.blue}
+      />
+      <fog attach="fog" args={[PALETTE.bg, 8, quality === "low" ? 80 : 95]} />
 
       <mesh rotation-x={-Math.PI / 2} position={[0, 0, -85]}>
         <planeGeometry args={[16.2, 260]} />
@@ -476,39 +620,39 @@ function CityRunnerScene({ scrollRef, quality }) {
         />
       </mesh>
 
-      <instancedMesh ref={dashIM} args={[dashGeo, dashMat, dashes.length]} />
-      <instancedMesh ref={sideIM} args={[sideGeo, sideMat, sideLines.length]} />
+      <instancedMesh ref={dashIM} args={[dashGeo, dashMat, dashes.count]} />
+      <instancedMesh ref={sideIM} args={[sideGeo, sideMat, sideLines.count]} />
 
       <instancedMesh
         ref={neonBlueIM}
-        args={[neonGeo, neonMatBlue, neonGroups.blue.length]}
+        args={[neonGeo, neonMatBlue, neonIdxByTint.blue.length]}
       />
       <instancedMesh
         ref={neonVioletIM}
-        args={[neonGeo, neonMatViolet, neonGroups.violet.length]}
+        args={[neonGeo, neonMatViolet, neonIdxByTint.violet.length]}
       />
       <instancedMesh
         ref={neonPinkIM}
-        args={[neonGeo, neonMatPink, neonGroups.pink.length]}
+        args={[neonGeo, neonMatPink, neonIdxByTint.pink.length]}
       />
 
-      <instancedMesh ref={tubeIM} args={[tubeGeo, tubeMat, tubes.length]} />
+      <instancedMesh ref={tubeIM} args={[tubeGeo, tubeMat, tubes.count]} />
 
       <instancedMesh
         ref={bDarkL}
-        args={[buildingGeo, bDarkMat, buildingGroups.dark.length]}
+        args={[buildingGeo, bDarkMat, buildingIdx.dark.length]}
       />
       <instancedMesh
         ref={bDarkR}
-        args={[buildingGeo, bDarkMat, buildingGroups.dark.length]}
+        args={[buildingGeo, bDarkMat, buildingIdx.dark.length]}
       />
       <instancedMesh
         ref={bCoolL}
-        args={[buildingGeo, bCoolLeftMat, buildingGroups.cool.length]}
+        args={[buildingGeo, bCoolLeftMat, buildingIdx.cool.length]}
       />
       <instancedMesh
         ref={bCoolR}
-        args={[buildingGeo, bCoolRightMat, buildingGroups.cool.length]}
+        args={[buildingGeo, bCoolRightMat, buildingIdx.cool.length]}
       />
     </group>
   );
@@ -522,6 +666,7 @@ export default function CityRunnerBackground({
   const [webglOk, setWebglOk] = useState(true);
   const [quality] = useState(() => pickQuality());
   const scrollRef = useRef(0);
+  const dpr = useAdaptiveDpr(quality);
 
   useEffect(() => {
     if (!scrollYProgress) return;
@@ -535,22 +680,20 @@ export default function CityRunnerBackground({
     if (!scrollYProgress) scrollRef.current = 0.2;
   }, [scrollYProgress]);
 
-  const dpr = quality === "low" ? 1 : quality === "mid" ? 1.25 : 1.5;
   const enableBloom = quality !== "low";
-  const canvasElRef = useRef(null);
+  const canvasDomRef = useRef(null);
 
   useEffect(() => {
-    const canvas = canvasElRef.current;
+    const canvas = canvasDomRef.current;
     if (!canvas) return;
 
     const onLost = (e) => {
       e.preventDefault();
       setWebglOk(false);
     };
-
     canvas.addEventListener("webglcontextlost", onLost, false);
     return () => canvas.removeEventListener("webglcontextlost", onLost, false);
-  }, [canvasElRef.current]);
+  }, [webglOk]);
 
   return (
     <>
@@ -568,7 +711,6 @@ export default function CityRunnerBackground({
           <Canvas
             frameloop="always"
             dpr={dpr}
-            performance={{ min: 0.5 }}
             gl={{
               antialias: false,
               alpha: true,
@@ -577,22 +719,24 @@ export default function CityRunnerBackground({
               depth: true,
               preserveDrawingBuffer: false,
             }}
-            style={{ width: "100%", height: "100%" }}
             camera={{ position: [0, 5.2, 14], fov: 58, near: 0.1, far: 260 }}
             onCreated={({ gl }) => {
-              canvasElRef.current = gl.domElement;
+              canvasDomRef.current = gl.domElement;
+              // extra: riduce banda in alcuni browser
+              gl.setPixelRatio(dpr);
             }}
+            style={{ width: "100%", height: "100%" }}
           >
             <color attach="background" args={[PALETTE.bg]} />
             <CityRunnerScene scrollRef={scrollRef} quality={quality} />
 
             {enableBloom && (
-              <EffectComposer>
+              <EffectComposer multisampling={0}>
                 <Bloom
-                  intensity={quality === "mid" ? 0.6 : 0.85}
-                  mipmapBlur
-                  luminanceThreshold={quality === "mid" ? 0.35 : 0.25}
-                  luminanceSmoothing={0.25}
+                  intensity={quality === "high" ? 0.5 : 0.35}
+                  luminanceThreshold={0.5}
+                  luminanceSmoothing={0.2}
+                  mipmapBlur={false}
                 />
               </EffectComposer>
             )}
