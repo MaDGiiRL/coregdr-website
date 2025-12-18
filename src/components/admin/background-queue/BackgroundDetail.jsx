@@ -9,7 +9,6 @@ import {
   Ban,
 } from "lucide-react";
 import { STATUS_LABELS, statusPill } from "./ui";
-import JobEditor from "./JobEditor";
 import CommentsSection from "./CommentsSection";
 
 export default function BackgroundDetail({
@@ -18,14 +17,6 @@ export default function BackgroundDetail({
   reduce,
 
   isLocked,
-
-  // job
-  canEditJob,
-  jobSaving,
-  jobDraft,
-  setJobDraft,
-  saveJob,
-  clearJob,
 
   // edit bg text
   canEditBgText,
@@ -124,23 +115,13 @@ export default function BackgroundDetail({
                     Background approvato – stato bloccato
                   </p>
                   <p className="text-xs text-emerald-200/80">
-                    Lo stato non può più cambiare, ma Job e Commenti restano
+                    Lo stato non può più cambiare, ma i Commenti restano
                     modificabili.
                   </p>
                 </div>
               </div>
             </div>
           )}
-
-          <JobEditor
-            canEditJob={canEditJob}
-            jobSaving={jobSaving}
-            jobDraft={jobDraft}
-            setJobDraft={setJobDraft}
-            saveJob={saveJob}
-            clearJob={clearJob}
-            reduce={reduce}
-          />
 
           <div className="space-y-4 text-xs md:text-sm">
             <section className="rounded-2xl bg-black/20 border border-[var(--color-border)] p-3 md:p-4 space-y-2">

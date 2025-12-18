@@ -137,13 +137,7 @@ export default function OverviewTab({
                             : `BG: ${u.bgStatus}`}
                         </Badge>
 
-                        <Badge
-                          variant="job"
-                          icon={FileText}
-                          title="Job (dal background)"
-                        >
-                          {u.job ? `Job: ${u.job}` : "Job: —"}
-                        </Badge>
+                       
 
                         <Badge
                           variant="pg"

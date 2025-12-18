@@ -45,54 +45,11 @@ export default function UsersTab({
             <input
               value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)}
-              placeholder="Cerca utente (discord/id/job/bg)"
+              placeholder="Cerca testo.."
               className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
             />
           </div>
 
-          <div className="relative">
-            <Briefcase className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
-            <select
-              value={jobFilter}
-              onChange={(e) => setJobFilter(e.target.value)}
-              className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
-            >
-              {jobOptions.map((j) => (
-                <option key={j.norm} value={j.norm}>
-                  {j.display}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="relative">
-            <UserCog className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
-            >
-              <option value="ALL">Tutti i ruoli</option>
-              <option value="Admin">Admin</option>
-              <option value="Whitelister">Whitelister</option>
-              <option value="User">User</option>
-            </select>
-          </div>
-
-          <div className="relative">
-            <FileText className="w-4 h-4 text-[var(--color-text-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
-            <select
-              value={bgFilter}
-              onChange={(e) => setBgFilter(e.target.value)}
-              className="pl-10 pr-3 py-2 rounded-2xl border border-[var(--color-border)] bg-black/20 text-xs outline-none focus:border-[var(--blue)]"
-            >
-              <option value="ALL">Tutti BG</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="none">Nessun BG</option>
-            </select>
-          </div>
 
           <span className="text-xs text-[var(--color-text-muted)]">
             {buildRangeLabel(total, page, pageSize)}
