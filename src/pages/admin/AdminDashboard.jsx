@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDiscordRoles } from "../../hooks/useDiscordRoles";
 import { useServerAccess } from "../../hooks/useServerAccess";
+import { useServerPGs } from "../../hooks/useServerPGs";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   LayoutDashboard,
@@ -188,6 +189,7 @@ export default function AdminDashboard() {
 
   const accessEnabled = isAdmin;
   const { accessMap } = useServerAccess({ enabled: accessEnabled });
+  const { pgMap } = useServerPGs({ enabled: accessEnabled });
 
   const fetchData = async () => {
     if (!profile) return;
@@ -280,6 +282,7 @@ export default function AdminDashboard() {
         setUsers(
           (usersData || []).map((u) => {
             const stList = accessMap.get(u.discord_id) ?? [];
+            const pgList = pgMap.get(u.discord_id) ?? [];
 
             let lastServerJoinAt = null;
             let hoursPlayed = 0;
@@ -378,31 +381,14 @@ export default function AdminDashboard() {
     setUserCharsLoading(true);
 
     try {
-      const { data, error } = await supabase
-        .from("characters")
-        .select(
-          `
-        id,
-        created_at,
-        allowing,
-        status,
-        job,
-        firstname,
-        lastname,
-        user_id,
-        profiles!inner(discord_id)
-      `
-        )
-        .eq("profiles.discord_id", u.discord_id)
-        .order("created_at", { ascending: false });
+      // Prendi i personaggi dal pgMap (già caricato dall'API)
+      const pgList = pgMap.get(u.discord_id) ?? [];
 
-      if (error) throw error;
-
-      const stList = accessMap.get(u.discord_id) ?? [];
       let lastServerJoinAt = null;
       let hoursPlayed = 0;
 
-      stList.forEach((userMap) => {
+      // Calcola ultimo join e ore totali
+      pgList.forEach((userMap) => {
         for (const [, data] of userMap) {
           if (data.lastServerJoinAt) {
             const d = new Date(data.lastServerJoinAt);
@@ -412,27 +398,17 @@ export default function AdminDashboard() {
         }
       });
 
-      const mapped = (data || []).map((ch) => ({
-        id: ch.id,
-        createdAt: ch.created_at,
-        status: ch.status ?? "none",
-        job: (ch.job ?? "").trim(),
-        name:
-          [ch.firstname, ch.lastname].filter(Boolean).join(" ").trim() ||
-          `PG #${ch.id}`,
-        lastServerJoinAt,
-        hoursPlayed,
-        __local: false,
-      }));
+      // Aggiorna lo stato con i personaggi
+      setUserCharacters(pgList);
 
-      setUserCharacters(mapped);
-
-      // ✅ sincronizza pgCount UI col numero reale caricato (solo UI)
+      // Aggiorna il pgCount nell'interfaccia
       setUsers((prev) =>
-        prev.map((x) => (x.id === u.id ? { ...x, pgCount: mapped.length } : x))
+        prev.map((x) =>
+          x.id === u.id ? { ...x, pgCount: pgList.length } : x
+        )
       );
       setSelectedUser((prev) =>
-        prev ? { ...prev, pgCount: mapped.length } : prev
+        prev ? { ...prev, pgCount: pgList.length } : prev
       );
     } catch (e) {
       console.error(e);
@@ -455,48 +431,37 @@ export default function AdminDashboard() {
   const addLocalCharacter = async () => {
     if (!selectedUser) return;
 
-    const max = Math.max(1, Number(selectedUser.pgMax ?? 1));
-    const count = Number(selectedUser.pgCount ?? userCharacters.length ?? 0);
+    try {
+      const currentMax = Number(selectedUser.pgMax ?? 0);
 
-    if (count >= max) {
-      await alertError(
-        "Limite raggiunto",
-        `Questo utente ha già ${count}/${max} PG.`
+      // Incrementa pg_num su Supabase
+      const { error } = await supabase
+        .from("profiles")
+        .update({ pg_num: currentMax + 1 })
+        .eq("discord_id", selectedUser.discord_id);
+
+      if (error) throw error;
+
+      const nextMax = currentMax + 1;
+      setUsers((prev) =>
+        prev.map((x) =>
+          x.id === selectedUser.id ? { ...x, pgMax: nextMax } : x
+        )
       );
-      return;
+      setSelectedUser((prev) => (prev ? { ...prev, pgMax: nextMax } : prev));
+
+      await writeLog(
+        "DASH_PG_ADD_DB",
+        `Incrementato pg_num per ${selectedUser.discordName}`,
+        {
+          target_user_id: selectedUser.id,
+          target_discord_id: selectedUser.discord_id,
+        }
+      );
+    } catch (e) {
+      console.error(e);
+      setUserCharsError("Impossibile aggiornare i PG dell'utente.");
     }
-
-    const newCh = {
-      id: `local_${
-        crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2)
-      }`,
-      createdAt: new Date().toISOString(),
-      status: "none",
-      job: "",
-      name: `PG #${count + 1}`,
-      lastServerJoinAt: userCharacters?.[0]?.lastServerJoinAt ?? null,
-      hoursPlayed: userCharacters?.[0]?.hoursPlayed ?? 0,
-      __local: true,
-    };
-
-    setUserCharacters((prev) => [newCh, ...prev]);
-
-    const nextCount = count + 1;
-    setUsers((prev) =>
-      prev.map((x) =>
-        x.id === selectedUser.id ? { ...x, pgCount: nextCount } : x
-      )
-    );
-    setSelectedUser((prev) => (prev ? { ...prev, pgCount: nextCount } : prev));
-
-    await writeLog(
-      "DASH_PG_ADD_UI",
-      `Aggiunto PG (solo UI) a ${selectedUser.discordName}`,
-      {
-        target_user_id: selectedUser.id,
-        target_discord_id: selectedUser.discord_id,
-      }
-    );
   };
 
   const removeLocalCharacter = async (chId) => {
@@ -530,7 +495,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, isAdmin, accessMap]);
+  }, [profile, isAdmin, accessMap, pgMap]);
 
   // ✅ poll leggero logs quando sei in overview/logs
   useEffect(() => {

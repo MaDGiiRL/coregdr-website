@@ -83,9 +83,6 @@ export default function UserCharactersModal({
                       type="button"
                       whileTap={{ scale: reduce ? 1 : 0.97 }}
                       onClick={addLocalCharacter}
-                      disabled={
-                        userCharacters.length >= (selectedUser?.pgMax ?? 1)
-                      }
                       className="px-3 py-2 rounded-2xl bg-[var(--violet)] text-white text-xs font-semibold shadow-md hover:brightness-110 inline-flex items-center gap-2 disabled:opacity-40"
                       title="Aggiungi PG (solo frontend)"
                     >
@@ -118,81 +115,64 @@ export default function UserCharactersModal({
 
               {!userCharsLoading && !userCharsError && (
                 <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-                  {userCharacters.map((ch) => (
-                    <div
-                      key={ch.id}
-                      className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
-                    >
-                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-semibold truncate">{ch.name}</p>
+                  {userCharacters.map((userMap) =>
+                    Array.from(userMap.entries()).map(([identifier, ch]) => (
+                      <div
+                        key={identifier}
+                        className="rounded-2xl border border-[var(--color-border)] bg-black/20 px-4 py-3"
+                      >
+                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate">{`${ch.firstname} ${ch.lastname}`}</p>
 
-                          <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                            Creato il{" "}
-                            {new Date(ch.createdAt).toLocaleString("it-IT", {
-                              dateStyle: "short",
-                              timeStyle: "short",
-                            })}
-                            {ch.__local ? (
-                              <span className="ml-2 opacity-70">(solo UI)</span>
-                            ) : null}
-                          </p>
-
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Badge
-                              variant={bgVariant(ch.status)}
-                              icon={FileText}
-                            >
-                              {ch.status === "none"
-                                ? "BG: —"
-                                : `BG: ${ch.status}`}
-                            </Badge>
-
-                            <Badge variant="job" icon={Briefcase}>
-                              {ch.job ? `Job: ${ch.job}` : "Job: —"}
-                            </Badge>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <div className="text-[11px] text-[var(--color-text-muted)] space-y-1 md:text-right">
-                            <div>
-                              Ultimo accesso:{" "}
-                              <span className="text-white/80">
-                                {ch.lastServerJoinAt
-                                  ? new Date(
-                                      ch.lastServerJoinAt
-                                    ).toLocaleString("it-IT", {
-                                      dateStyle: "short",
-                                      timeStyle: "short",
-                                    })
-                                  : "—"}
-                              </span>
-                            </div>
-                            <div>
-                              Ore in gioco:{" "}
-                              <span className="text-white/80 font-semibold">
-                                {Number(ch.hoursPlayed || 0).toFixed(1)}
-                              </span>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Badge variant="job" icon={Briefcase}>
+                                {ch.job ? `Job: ${ch.job}` : "Job: —"}
+                              </Badge>
+                              <Badge variant="job" icon={Briefcase}>
+                                {ch.job2 ? `Job2: ${ch.job2}` : "Job2: —"}
+                              </Badge>
                             </div>
                           </div>
 
-                          {canAdminEditPG && (
-                            <motion.button
-                              type="button"
-                              whileTap={{ scale: reduce ? 1 : 0.97 }}
-                              onClick={() => removeLocalCharacter(ch.id)}
-                              className="ml-2 px-3 py-2 rounded-2xl border border-rose-400/30 bg-rose-400/10 hover:bg-rose-400/15 text-rose-200 text-xs font-semibold inline-flex items-center gap-2"
-                              title="Rimuovi PG (solo frontend)"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Rimuovi
-                            </motion.button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            <div className="text-[11px] text-[var(--color-text-muted)] space-y-1 md:text-right">
+                              <div>
+                                Ultimo accesso:{" "}
+                                <span className="text-white/80">
+                                  {ch.lastServerJoinAt
+                                    ? new Date(ch.lastServerJoinAt).toLocaleString("it-IT", {
+                                        dateStyle: "short",
+                                        timeStyle: "short",
+                                      })
+                                    : "—"}
+                                </span>
+                              </div>
+                              <div>
+                                Ore in gioco:{" "}
+                                <span className="text-white/80 font-semibold">
+                                  {Number(ch.hoursPlayed || 0).toFixed(1)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {canAdminEditPG && (
+                              <motion.button
+                                type="button"
+                                whileTap={{ scale: reduce ? 1 : 0.97 }}
+                                onClick={() => removeLocalCharacter(identifier)}
+                                className="ml-2 px-3 py-2 rounded-2xl border border-rose-400/30 bg-rose-400/10 hover:bg-rose-400/15 text-rose-200 text-xs font-semibold inline-flex items-center gap-2"
+                                title="Rimuovi PG (solo frontend)"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Rimuovi
+                              </motion.button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
 
                   {userCharacters.length === 0 && (
                     <div className="text-xs text-[var(--color-text-muted)]">
